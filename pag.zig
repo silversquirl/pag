@@ -262,6 +262,40 @@ test "parens" {
     try std.testing.expectError(error.InvalidParse, parse(rules, .many, "( )"));
 }
 
+test "hex number" {
+    // Construct a parser for unsigned hexadecimal numbers
+    const rules = struct {
+        pub const digit: Rule = &.{
+            .{ .syms = &.{
+                .{ .set = &SetBuilder.init()
+                    .addRange('0', '9')
+                    .addRange('a', 'f')
+                    .addRange('A', 'F')
+                    .set },
+            } },
+        };
+        pub const num: Rule = &.{
+            .{ .syms = &.{ .{ .nt = .digit }, .{ .nt = .num } } },
+            .{ .syms = &.{.{ .nt = .digit }} },
+        };
+    };
+
+    // Check it parses correctly
+    try parse(rules, .num, "0");
+    try parse(rules, .num, "0123456789abcdefABCDEF");
+    try parse(rules, .num, "A0");
+    try parse(rules, .num, "aF0Ab");
+
+    // Check it fails correctly
+    try std.testing.expectError(error.InvalidParse, parse(rules, .num, ""));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .num, "x"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .num, "abcdefg"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .num, "0829an"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .num, "ab de"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .num, "G"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .num, "aH"));
+}
+
 test "quoted string" {
     // Construct a parser for quoted strings
     const rules = struct {
@@ -273,29 +307,34 @@ test "quoted string" {
             .{ .syms = &.{} },
         };
         pub const char: Rule = &.{
-            .{ .syms = &.{.{ .set = &unescaped_char }} },
-            .{ .syms = &.{ .{ .str = "\\" }, .{ .nt = .escaped_char } } },
+            .{ .syms = &.{
+                .{ .set = &SetBuilder.init()
+                    .add("\\\"")
+                    .invert()
+                    .set },
+            } },
+            .{ .syms = &.{
+                .{ .str = "\\" },
+                .{ .nt = .escaped_char },
+            } },
         };
         pub const escaped_char: Rule = &.{
-            .{ .syms = &.{.{ .set = &require_escape_char }} },
+            .{ .syms = &.{
+                .{ .set = &SetBuilder.init()
+                    .add("\\\"")
+                    .set },
+            } },
             .{ .syms = &.{ .{ .str = "x" }, .{ .nt = .hexdig }, .{ .nt = .hexdig } } },
         };
         pub const hexdig: Rule = &.{
-            .{ .syms = &.{.{ .set = &hexdig_set }} },
+            .{ .syms = &.{
+                .{ .set = &SetBuilder.init()
+                    .addRange('0', '9')
+                    .addRange('a', 'f')
+                    .addRange('A', 'F')
+                    .set },
+            } },
         };
-
-        pub const unescaped_char = SetBuilder.init()
-            .add("\\\"")
-            .invert()
-            .set;
-        pub const require_escape_char = SetBuilder.init()
-            .add("\\\"")
-            .set;
-        pub const hexdig_set = SetBuilder.init()
-            .addRange('0', '9')
-            .addRange('a', 'f')
-            .addRange('A', 'F')
-            .set;
     };
 
     // Check it parses correctly

@@ -1,0 +1,37 @@
+file = ws rule file | ws $;
+
+rule = ident ws "=" ws productions ws ";";
+productions = production ws "|" ws productions | production;
+production = symbols ws func?;
+symbols = symbol ws symbols | ;
+symbol = ident | string | set | end;
+
+func? = "@" zig-ident | ;
+zig-ident = zig-ident-first-char zig-ident-rest;
+zig-ident-rest = zig-ident-char zig-ident-rest | ;
+zig-ident-first-char = [a-zA-Z_];
+zig-ident-char = [a-zA-Z0-9_];
+
+ident = ident-char ident | ident-char;
+ident-char = [a-zA-Z0-9?!_-];
+
+string = ["] string-chars ["];
+string-chars = string-char string-chars | ;
+string-char = [^\\"] | "\\" string-char-escaped;
+string-char-escaped = [\\"] | "x" hexdig hexdig;
+
+set = "[" set-invert? set-entries "]";
+set-invert? = "^" | ;
+set-entries = set-entry set-entries | set-entry ;
+set-entry = set-char "-" set-char | set-char;
+set-char = [^\[\]\\] | "\\" set-char-escaped;
+set-char-escaped = [\[\]\\] | "x" hexdig hexdig;
+
+ws = [ \x09\x0a] ws
+   | "//" comment "\x0a" ws
+   ;
+comment = [^\x0a] comment | ;
+
+hexdig = [0-9a-fA-F];
+
+end = "$";
