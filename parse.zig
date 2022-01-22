@@ -77,9 +77,15 @@ pub fn Parser(comptime rules: type) type {
                 } else {
                     return error.InvalidParse;
                 },
-                .t => |expected| if (std.mem.startsWith(u8, text, expected)) {
+                .str => |expected| if (std.mem.startsWith(u8, text, expected)) {
                     result.* = text[0..expected.len];
                     return expected.len;
+                } else {
+                    return error.InvalidParse;
+                },
+                .set => |set| if (text.len > 0 and set.isSet(text[0])) {
+                    result.* = text[0];
+                    return 1;
                 } else {
                     return error.InvalidParse;
                 },
@@ -169,7 +175,8 @@ pub fn Parser(comptime rules: type) type {
         fn SymbolResult(comptime sym: Symbol) type {
             return switch (sym) {
                 .end => void,
-                .t => []const u8,
+                .str => []const u8,
+                .set => u8,
                 .nt => |rule| RuleResult(rule),
             };
         }
@@ -183,17 +190,51 @@ pub const Production = struct {
 };
 pub const Symbol = union(enum) {
     end: void,
-    t: []const u8,
+    str: []const u8,
+    set: *const Set,
     nt: @Type(.EnumLiteral),
+};
+pub const Set = std.StaticBitSet(256);
+pub const SetBuilder = struct {
+    set: Set = Set.initEmpty(),
+
+    pub fn init() SetBuilder {
+        return .{};
+    }
+
+    pub fn add(self_const: SetBuilder, chars: []const u8) SetBuilder {
+        var self = self_const;
+        for (chars) |ch| {
+            self.set.set(ch);
+        }
+        return self;
+    }
+
+    pub fn addRange(self_const: SetBuilder, start: u8, end: u8) SetBuilder {
+        var self = self_const;
+        var ch = start;
+        while (true) {
+            self.set.set(ch);
+            if (ch == end) break;
+            ch += 1;
+        }
+        return self;
+    }
+
+    pub fn invert(self_const: SetBuilder) SetBuilder {
+        var self = self_const;
+        self.set.toggleAll();
+        return self;
+    }
 };
 
 test "parens" {
     // Construct a parser for matched paren pairs
     const rules = struct {
-        const nested: Rule = &.{
-            .{ .syms = &.{ .{ .t = "(" }, .{ .nt = .many }, .{ .t = ")" } } },
+        pub const nested: Rule = &.{
+            .{ .syms = &.{ .{ .str = "(" }, .{ .nt = .many }, .{ .str = ")" } } },
         };
-        const many: Rule = &.{
+        pub const many: Rule = &.{
             .{ .syms = &.{ .{ .nt = .nested }, .{ .nt = .many } } },
             .{ .syms = &.{} },
         };
@@ -219,4 +260,99 @@ test "parens" {
     try std.testing.expectError(error.InvalidParse, parse(rules, .many, "[]"));
     try std.testing.expectError(error.InvalidParse, parse(rules, .many, "([])"));
     try std.testing.expectError(error.InvalidParse, parse(rules, .many, "( )"));
+}
+
+test "quoted string" {
+    // Construct a parser for quoted strings
+    const rules = struct {
+        pub const string: Rule = &.{
+            .{ .syms = &.{ .{ .str = "\"" }, .{ .nt = .chars }, .{ .str = "\"" } } },
+        };
+        pub const chars: Rule = &.{
+            .{ .syms = &.{ .{ .nt = .char }, .{ .nt = .chars } } },
+            .{ .syms = &.{} },
+        };
+        pub const char: Rule = &.{
+            .{ .syms = &.{.{ .set = &unescaped_char }} },
+            .{ .syms = &.{ .{ .str = "\\" }, .{ .nt = .escaped_char } } },
+        };
+        pub const escaped_char: Rule = &.{
+            .{ .syms = &.{.{ .set = &require_escape_char }} },
+            .{ .syms = &.{ .{ .str = "x" }, .{ .nt = .hexdig }, .{ .nt = .hexdig } } },
+        };
+        pub const hexdig: Rule = &.{
+            .{ .syms = &.{.{ .set = &hexdig_set }} },
+        };
+
+        pub const unescaped_char = SetBuilder.init()
+            .add("\\\"")
+            .invert()
+            .set;
+        pub const require_escape_char = SetBuilder.init()
+            .add("\\\"")
+            .set;
+        pub const hexdig_set = SetBuilder.init()
+            .addRange('0', '9')
+            .addRange('a', 'f')
+            .addRange('A', 'F')
+            .set;
+    };
+
+    // Check it parses correctly
+    try parse(rules, .string, "\"\"");
+    try parse(rules, .string, "\"foobar\"");
+    try parse(rules, .string, "\"foo bar baz\"");
+    try parse(rules, .string,
+        \\"foo \" bar"
+    );
+    try parse(rules, .string,
+        \\"foo \\ bar"
+    );
+    try parse(rules, .string,
+        \\"\""
+    );
+    try parse(rules, .string,
+        \\"\\"
+    );
+    try parse(rules, .string,
+        \\"\\\""
+    );
+    try parse(rules, .string,
+        \\"foo \x23 bar"
+    );
+    try parse(rules, .string,
+        \\"\x4a"
+    );
+    try parse(rules, .string,
+        \\"\x7f\x1B\\"
+    );
+    try parse(rules, .string,
+        \\"\x09\"\xAF\xfa"
+    );
+
+    // Check it fails correctly
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, ""));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, "\""));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, "\"\"\""));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, "\"\"\"\""));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, "asdf"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, "asdf\""));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, "\"asdf"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, "asdf\"foo\""));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, "\"foo\"asdf"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string,
+        \\"foo \a bar"
+    ));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string,
+        \\"\"\m"
+    ));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string,
+        \\"foo \xag bar"
+    ));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string,
+        \\"\xn7"
+    ));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string,
+        \\"\x3k"
+    ));
 }
