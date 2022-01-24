@@ -7,6 +7,62 @@ pub fn parse(allocator: std.mem.Allocator, source: []const u8) !File {
     return List(Rule).collect(list, allocator);
 }
 
+pub fn generate(writer: anytype, file: File) !void {
+    try writer.writeAll(
+        \\const pag = @import("pag");
+        \\
+        \\
+    );
+    for (file) |rule| {
+        try writer.print("pub const {}: pag.Rule = &.{{\n", .{std.zig.fmtId(rule.name)});
+        for (rule.prods) |prod| {
+            try writer.writeAll(".{ .syms = &.{\n");
+            for (prod.syms) |sym| {
+                switch (sym) {
+                    .end => try writer.writeAll(".end,\n"),
+                    .str => |str| try writer.print(".{{ .str = \"{}\" }},\n", .{std.zig.fmtEscapes(str)}),
+                    .set => |set| try generateSet(writer, set),
+                    .nt => |name| try writer.print(".{{ .nt = .{} }},\n", .{std.zig.fmtId(name)}),
+                }
+            }
+            try writer.writeAll("}");
+            if (prod.func) |func| {
+                try writer.print(", .func = funcs.{}", .{std.zig.fmtId(func)});
+            }
+            try writer.writeAll(" },\n");
+        }
+        try writer.writeAll("};\n\n");
+    }
+}
+fn generateSet(writer: anytype, set: Set) !void {
+    if (!set.invert and set.entries.len == 1 and set.entries[0] == .ch) {
+        // For single-char sets, emit a string instead for efficiency
+        // FIXME: this messes up the types; maybe add a char symbol too?
+        try writer.print(".{{ .str = \"{}\" }},\n", .{
+            std.zig.fmtEscapes(&.{set.entries[0].ch}),
+        });
+        return;
+    }
+
+    try writer.writeAll(".{ .set = &pag.SetBuilder.init()\n");
+    for (set.entries) |entry| {
+        switch (entry) {
+            // TODO: merge all chars into one add
+            .ch => |ch| try writer.print(".add(\"{}\")\n", .{
+                std.zig.fmtEscapes(&.{ch}),
+            }),
+            .range => |r| try writer.print(".addRange('{'}', '{'}')\n", .{
+                std.zig.fmtEscapes(&.{r.start}),
+                std.zig.fmtEscapes(&.{r.end}),
+            }),
+        }
+    }
+    if (set.invert) {
+        try writer.writeAll(".invert()\n");
+    }
+    try writer.writeAll(".set },\n");
+}
+
 pub fn List(comptime T: type) type {
     return struct {
         value: T,
@@ -88,5 +144,6 @@ pub const Set = struct {
 };
 
 test {
-    _ = @import("test.zig");
+    _ = @import("test/parse.zig");
+    _ = @import("test/generate.zig");
 }
