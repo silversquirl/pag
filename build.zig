@@ -15,8 +15,10 @@ pub fn build(b: *std.build.Builder) void {
     exe.setBuildMode(mode);
     exe.install();
 
+    const lib_tests = b.addTest("pag.zig");
     const compiler_tests = b.addTest("compiler/main.zig");
     compiler_tests.addPackage(pag);
     const test_step = b.step("test", "Run compiler tests");
+    test_step.dependOn(&lib_tests.step);
     test_step.dependOn(&compiler_tests.step);
 }
