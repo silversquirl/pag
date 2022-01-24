@@ -3,18 +3,19 @@ const std = @import("std");
 pub fn parse(
     comptime rules: type,
     comptime start: std.meta.DeclEnum(rules),
+    context: anytype,
     text: []const u8,
-) !Parser(rules).RuleResult(start) {
-    var result: Parser(rules).RuleResult(start) = undefined;
-    const n = try Parser(rules).parseRule(start, text, &result);
+) !Parser(rules, @TypeOf(context)).RuleResult(start) {
+    const P = Parser(rules, @TypeOf(context));
+    var result: P.RuleResult(start) = undefined;
+    const n = try P.parseRule(start, context, text, &result);
     if (n != text.len) {
         return error.InvalidParse;
     }
     return result;
 }
 
-// Generate a type so we can exploit memoization for faster compile times
-pub fn Parser(comptime rules: type) type {
+pub fn Parser(comptime rules: type, comptime Context: type) type {
     return struct {
         const RuleName = std.meta.DeclEnum(rules);
         const RuleSet = std.enums.EnumSet(RuleName);
@@ -22,12 +23,13 @@ pub fn Parser(comptime rules: type) type {
 
         pub fn parseRule(
             comptime rule_name: RuleName,
+            context: Context,
             text: []const u8,
             result: *RuleResult(rule_name),
         ) RuleError(rule_name)!usize {
             const rule = @field(rules, @tagName(rule_name));
             inline for (rule) |prod| {
-                if (parseProd(prod, text, result)) |n| {
+                if (parseProd(prod, context, text, result)) |n| {
                     return n;
                 } else |err| switch (err) {
                     error.InvalidParse => {},
@@ -39,38 +41,59 @@ pub fn Parser(comptime rules: type) type {
 
         fn parseProd(
             comptime prod: Production,
+            context: Context,
             text: []const u8,
             result: *ProdResult(prod),
         ) ProdError(prod)!usize {
-            if (prod.func == null) {
+            if (@TypeOf(prod.func) == void) {
                 result.*; // Assert result is *void
                 var n: usize = 0;
                 inline for (prod.syms) |sym| {
                     var res: SymbolResult(sym) = undefined;
-                    n += try parseSym(sym, text[n..], &res);
+                    n += try parseSym(sym, context, text[n..], &res);
                 }
                 return n;
             } else {
-                // TODO: context arg
-                var args: std.meta.ArgsTuple(prod.func) = undefined;
-                if (args.len != prod.syms.len) {
-                    @compileError(std.fmt.comptimePrint(
+                var args: std.meta.ArgsTuple(@TypeOf(prod.func)) = undefined;
+                args[0] = context;
+
+                if (args.len != prod.syms.len + 1) {
+                    @compileError(comptime std.fmt.comptimePrint(
                         "production function {} has incorrect arity (expected {}, got {})",
-                        .{ prod.func, args.len, prod.syms.len },
+                        .{ @TypeOf(prod.func), args.len, prod.syms.len + 1 },
                     ));
                 }
 
                 var n: usize = 0;
                 inline for (prod.syms) |sym, i| {
-                    n += try parseSym(sym, text[n..], &args[i]);
+                    if (@TypeOf(args[i + 1]) != SymbolResult(sym)) {
+                        // Specially handle this type error for better readability
+                        const expected = @typeName(@TypeOf(args[i + 1]));
+                        const found = @typeName(SymbolResult(sym));
+                        @compileError(comptime std.fmt.comptimePrint(
+                            "expected {} to have type {s}, found {s}",
+                            .{ sym, expected, found },
+                        ));
+                    }
+                    n += try parseSym(sym, context, text[n..], &args[i + 1]);
                 }
 
-                result.* = @call(.{}, prod.func, args);
+                const ret = @call(.{}, prod.func, args);
+                result.* = switch (@typeInfo(@TypeOf(ret))) {
+                    .ErrorUnion => try ret,
+                    else => ret,
+                };
+
                 return n;
             }
         }
 
-        fn parseSym(comptime sym: Symbol, text: []const u8, result: *SymbolResult(sym)) !usize {
+        fn parseSym(
+            comptime sym: Symbol,
+            context: Context,
+            text: []const u8,
+            result: *SymbolResult(sym),
+        ) !usize {
             switch (sym) {
                 .end => if (text.len == 0) {
                     return 0;
@@ -89,7 +112,7 @@ pub fn Parser(comptime rules: type) type {
                 } else {
                     return error.InvalidParse;
                 },
-                .nt => |rule| return parseRule(rule, text, result),
+                .nt => |rule| return parseRule(rule, context, text, result),
             }
         }
 
@@ -115,6 +138,7 @@ pub fn Parser(comptime rules: type) type {
             return RuleErrorR(rule_name_e, RuleSet.init(.{}));
         }
         fn RuleErrorR(comptime rule_name_e: RuleName, comptime checked_const: RuleSet) type {
+            @setEvalBranchQuota(10_000);
             var checked = checked_const;
             if (checked.contains(rule_name_e)) {
                 return BaseError;
@@ -130,7 +154,7 @@ pub fn Parser(comptime rules: type) type {
             }
 
             var E = BaseError;
-            for (rule[1..]) |prod| {
+            for (rule) |prod| {
                 E = E || ProdErrorR(prod, checked);
             }
 
@@ -138,7 +162,7 @@ pub fn Parser(comptime rules: type) type {
         }
 
         fn ProdResult(comptime prod: Production) type {
-            if (prod.func == null) return void;
+            if (@TypeOf(prod.func) == void) return void;
             const ret = @typeInfo(@TypeOf(prod.func)).Fn.return_type.?;
             return switch (@typeInfo(ret)) {
                 .ErrorUnion => |eu| eu.payload,
@@ -153,7 +177,7 @@ pub fn Parser(comptime rules: type) type {
             var E = BaseError;
 
             // Add func errors to the set
-            if (prod.func != null) {
+            if (@TypeOf(prod.func) != void) {
                 const ret = @typeInfo(@TypeOf(prod.func)).Fn.return_type.?;
                 switch (@typeInfo(ret)) {
                     .ErrorUnion => |eu| E = E || eu.error_set,
@@ -186,7 +210,7 @@ pub fn Parser(comptime rules: type) type {
 pub const Rule = []const Production;
 pub const Production = struct {
     syms: []const Symbol,
-    func: anytype = null,
+    func: anytype = {},
 };
 pub const Symbol = union(enum) {
     end: void,
@@ -241,25 +265,25 @@ test "parens" {
     };
 
     // Check it parses correctly
-    try parse(rules, .many, "");
-    try parse(rules, .many, "()");
-    try parse(rules, .many, "()()");
-    try parse(rules, .many, "(())");
-    try parse(rules, .many, "(())()");
-    try parse(rules, .many, "(()())");
-    try parse(rules, .many, "()((()())())");
-    try parse(rules, .many, "(()()(()()))()()(()(()())())");
+    try parse(rules, .many, {}, "");
+    try parse(rules, .many, {}, "()");
+    try parse(rules, .many, {}, "()()");
+    try parse(rules, .many, {}, "(())");
+    try parse(rules, .many, {}, "(())()");
+    try parse(rules, .many, {}, "(()())");
+    try parse(rules, .many, {}, "()((()())())");
+    try parse(rules, .many, {}, "(()()(()()))()()(()(()())())");
 
     // Check it fails correctly
-    try std.testing.expectError(error.InvalidParse, parse(rules, .many, "("));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .many, ")"));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .many, "())"));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .many, "(()"));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .many, "()())"));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .many, "(()(())"));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .many, "[]"));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .many, "([])"));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .many, "( )"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .many, {}, "("));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .many, {}, ")"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .many, {}, "())"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .many, {}, "(()"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .many, {}, "()())"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .many, {}, "(()(())"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .many, {}, "[]"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .many, {}, "([])"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .many, {}, "( )"));
 }
 
 test "hex number" {
@@ -281,19 +305,19 @@ test "hex number" {
     };
 
     // Check it parses correctly
-    try parse(rules, .num, "0");
-    try parse(rules, .num, "0123456789abcdefABCDEF");
-    try parse(rules, .num, "A0");
-    try parse(rules, .num, "aF0Ab");
+    try parse(rules, .num, {}, "0");
+    try parse(rules, .num, {}, "0123456789abcdefABCDEF");
+    try parse(rules, .num, {}, "A0");
+    try parse(rules, .num, {}, "aF0Ab");
 
     // Check it fails correctly
-    try std.testing.expectError(error.InvalidParse, parse(rules, .num, ""));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .num, "x"));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .num, "abcdefg"));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .num, "0829an"));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .num, "ab de"));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .num, "G"));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .num, "aH"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .num, {}, ""));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .num, {}, "x"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .num, {}, "abcdefg"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .num, {}, "0829an"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .num, {}, "ab de"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .num, {}, "G"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .num, {}, "aH"));
 }
 
 test "quoted string" {
@@ -338,60 +362,60 @@ test "quoted string" {
     };
 
     // Check it parses correctly
-    try parse(rules, .string, "\"\"");
-    try parse(rules, .string, "\"foobar\"");
-    try parse(rules, .string, "\"foo bar baz\"");
-    try parse(rules, .string,
+    try parse(rules, .string, {}, "\"\"");
+    try parse(rules, .string, {}, "\"foobar\"");
+    try parse(rules, .string, {}, "\"foo bar baz\"");
+    try parse(rules, .string, {},
         \\"foo \" bar"
     );
-    try parse(rules, .string,
+    try parse(rules, .string, {},
         \\"foo \\ bar"
     );
-    try parse(rules, .string,
+    try parse(rules, .string, {},
         \\"\""
     );
-    try parse(rules, .string,
+    try parse(rules, .string, {},
         \\"\\"
     );
-    try parse(rules, .string,
+    try parse(rules, .string, {},
         \\"\\\""
     );
-    try parse(rules, .string,
+    try parse(rules, .string, {},
         \\"foo \x23 bar"
     );
-    try parse(rules, .string,
+    try parse(rules, .string, {},
         \\"\x4a"
     );
-    try parse(rules, .string,
+    try parse(rules, .string, {},
         \\"\x7f\x1B\\"
     );
-    try parse(rules, .string,
+    try parse(rules, .string, {},
         \\"\x09\"\xAF\xfa"
     );
 
     // Check it fails correctly
-    try std.testing.expectError(error.InvalidParse, parse(rules, .string, ""));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .string, "\""));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .string, "\"\"\""));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .string, "\"\"\"\""));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .string, "asdf"));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .string, "asdf\""));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .string, "\"asdf"));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .string, "asdf\"foo\""));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .string, "\"foo\"asdf"));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .string,
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, {}, ""));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, {}, "\""));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, {}, "\"\"\""));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, {}, "\"\"\"\""));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, {}, "asdf"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, {}, "asdf\""));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, {}, "\"asdf"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, {}, "asdf\"foo\""));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, {}, "\"foo\"asdf"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, {},
         \\"foo \a bar"
     ));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .string,
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, {},
         \\"\"\m"
     ));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .string,
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, {},
         \\"foo \xag bar"
     ));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .string,
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, {},
         \\"\xn7"
     ));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .string,
+    try std.testing.expectError(error.InvalidParse, parse(rules, .string, {},
         \\"\x3k"
     ));
 }

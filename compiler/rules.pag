@@ -1,9 +1,9 @@
-file = ws rule file | ws $;
+file = ws? rule file | ws? $;
 
-rule = ident ws "=" ws productions ws ";";
-productions = production ws "|" ws productions | production;
-production = symbols ws func?;
-symbols = symbol ws symbols | ;
+rule = ident ws? "=" ws? productions ws? ";";
+productions = production ws? "|" ws? productions | production;
+production = symbols ws? func?;
+symbols = symbol ws? symbols | ;
 symbol = ident | string | set | end;
 
 func? = "@" zig-ident | ;
@@ -27,9 +27,10 @@ set-entry = set-char "-" set-char | set-char;
 set-char = [^\[\]\\] | "\\" set-char-escaped;
 set-char-escaped = [\[\]\\] | "x" hexdig hexdig;
 
-ws = [ \x09\x0a] ws
-   | "//" comment "\x0a" ws
-   ;
+ws? = [ \x09\x0a] ws?
+    | "//" comment "\x0a" ws?
+	|
+    ;
 comment = [^\x0a] comment | ;
 
 hexdig = [0-9a-fA-F];
