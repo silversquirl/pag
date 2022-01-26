@@ -1,10 +1,40 @@
 const std = @import("std");
 const pag = @import("pag");
-const rules = @import("rules.zig");
+const pag_rules = @import("rules.zig");
 
 pub fn parse(allocator: std.mem.Allocator, source: []const u8) !File {
-    const list = try pag.parse(rules, .file, allocator, source);
-    return List(Rule).collect(list, allocator);
+    var tls_rev = try pag.parse(pag_rules, .file, allocator, source);
+    defer tls_rev.deinit(allocator);
+
+    var header = std.ArrayList(u8).init(allocator);
+    errdefer header.deinit();
+    var rules = std.ArrayList(Rule).init(allocator);
+    errdefer rules.deinit();
+    var context = Context{
+        .name = "_",
+        .type = "void",
+    };
+
+    var i: usize = tls_rev.items.len;
+    while (i > 0) {
+        i -= 1;
+        switch (tls_rev.items[i]) {
+            .pragma => |prag| switch (prag) {
+                .context => |ctx| context = ctx,
+            },
+            .block => |code| {
+                try header.appendSlice(code);
+                allocator.free(code);
+            },
+            .rule => |rule| try rules.append(rule),
+        }
+    }
+
+    return File{
+        .header = header.toOwnedSlice(),
+        .rules = rules.toOwnedSlice(),
+        .context = context,
+    };
 }
 
 pub fn generate(writer: anytype, file: File) !void {
@@ -13,9 +43,16 @@ pub fn generate(writer: anytype, file: File) !void {
         \\
         \\
     );
-    for (file) |rule| {
+
+    if (file.header.len > 0) {
+        try writer.writeAll(file.header);
+        try writer.writeAll("\n\n");
+    }
+
+    var have_funcs = false;
+    for (file.rules) |rule| {
         try writer.print("pub const {}: pag.Rule = &.{{\n", .{std.zig.fmtId(rule.name)});
-        for (rule.prods) |prod| {
+        for (rule.prods) |prod, prod_i| {
             try writer.writeAll(".{ .syms = &.{\n");
             for (prod.syms) |sym| {
                 switch (sym) {
@@ -26,12 +63,50 @@ pub fn generate(writer: anytype, file: File) !void {
                 }
             }
             try writer.writeAll("}");
-            if (prod.func) |func| {
-                try writer.print(", .func = funcs.{}", .{std.zig.fmtId(func)});
+            if (prod.func) |_| {
+                try writer.writeAll(", .func = _pag_generated_funcs.");
+                try writeNumberedId(writer, rule.name, prod_i);
+                have_funcs = true;
             }
             try writer.writeAll(" },\n");
         }
         try writer.writeAll("};\n\n");
+    }
+
+    if (have_funcs) {
+        try writer.writeAll("const _pag_generated_funcs = struct {\n");
+        for (file.rules) |rule| {
+            for (rule.prods) |prod, prod_i| {
+                const func = prod.func orelse continue;
+                try writer.writeAll("fn ");
+                try writeNumberedId(writer, rule.name, prod_i);
+                try writer.writeAll("(\n");
+                try writer.print("{s}: {s},\n", .{ file.context.name, file.context.type });
+
+                for (func.args) |arg_name, i| {
+                    const ty = switch (prod.syms[i]) {
+                        .end => "void",
+                        .str => "[]const u8",
+                        .set => "u8",
+
+                        // TODO: make this not O(n^2)
+                        .nt => |name| for (file.rules) |rule2| {
+                            if (std.mem.eql(u8, rule2.name, name)) {
+                                break rule2.type;
+                            }
+                        } else {
+                            return error.RuleNotDefined;
+                        },
+                    };
+
+                    try writer.print("{s}: {s},\n", .{ arg_name, ty });
+                }
+
+                try writer.print(") !{s} {{{s}}}\n", .{ rule.type, func.code });
+            }
+            try writer.writeAll("\n");
+        }
+        try writer.writeAll("};\n");
     }
 }
 fn generateSet(writer: anytype, set: Set) !void {
@@ -61,6 +136,13 @@ fn generateSet(writer: anytype, set: Set) !void {
         try writer.writeAll(".invert()\n");
     }
     try writer.writeAll(".set },\n");
+}
+fn writeNumberedId(writer: anytype, ident: []const u8, num: usize) !void {
+    if (std.zig.isValidId(ident)) {
+        try writer.print("{s}{}", .{ ident, num });
+    } else {
+        try writer.print("@\"{s}{}\"", .{ ident, num });
+    }
 }
 
 pub fn List(comptime T: type) type {
@@ -98,9 +180,11 @@ pub fn List(comptime T: type) type {
             var node_opt = if (self) |*n| n else null;
             while (node_opt) |node| {
                 slice[i] = node.value;
-                allocator.destroy(node);
 
                 node_opt = node.next;
+                if (node.next) |n| {
+                    allocator.destroy(n);
+                }
                 i += 1;
             }
 
@@ -115,14 +199,35 @@ pub fn List(comptime T: type) type {
     };
 }
 
-pub const File = []const Rule;
+pub const File = struct {
+    header: []const u8,
+    rules: []const Rule,
+    context: Context,
+};
+pub const Context = struct {
+    name: []const u8,
+    type: []const u8,
+};
+pub const Toplevel = union(enum) {
+    pragma: Pragma,
+    block: []const u8,
+    rule: Rule,
+};
+pub const Pragma = union(enum) {
+    context: Context,
+};
 pub const Rule = struct {
     name: []const u8,
+    type: []const u8,
     prods: []const Production,
 };
 pub const Production = struct {
     syms: []const Symbol,
-    func: ?[]const u8,
+    func: ?Func,
+};
+pub const Func = struct {
+    args: []const []const u8,
+    code: []const u8,
 };
 pub const Symbol = union(enum) {
     end: void,

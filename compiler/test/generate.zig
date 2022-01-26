@@ -2,7 +2,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const asts = @import("asts.zig");
 
-test "parse parens" {
+test "generate parens" {
     var array = std.ArrayList(u8).init(std.testing.allocator);
     defer array.deinit();
     try ast.generate(array.writer(), asts.parens);
@@ -30,21 +30,23 @@ test "parse parens" {
     , array.items);
 }
 
-test "parse hex number" {
+test "generate hex number" {
     var array = std.ArrayList(u8).init(std.testing.allocator);
     defer array.deinit();
     try ast.generate(array.writer(), asts.hexnum);
     try std.testing.expectEqualStrings(
         \\const pag = @import("pag");
         \\
+        \\const std = @import("std");
+        \\
         \\pub const num: pag.Rule = &.{
         \\.{ .syms = &.{
         \\.{ .nt = .digit },
         \\.{ .nt = .num },
-        \\} },
+        \\}, .func = _pag_generated_funcs.num0 },
         \\.{ .syms = &.{
         \\.{ .nt = .digit },
-        \\} },
+        \\}, .func = _pag_generated_funcs.num1 },
         \\};
         \\
         \\pub const digit: pag.Rule = &.{
@@ -54,14 +56,33 @@ test "parse hex number" {
         \\.addRange('a', 'f')
         \\.addRange('A', 'F')
         \\.set },
-        \\} },
+        \\}, .func = _pag_generated_funcs.digit0 },
         \\};
         \\
+        \\const _pag_generated_funcs = struct {
+        \\fn num0(
+        \\_: void,
+        \\digit: u4,
+        \\num: u64,
+        \\) !u64 { return num << 4 | digit; }
+        \\fn num1(
+        \\_: void,
+        \\digit: u4,
+        \\) !u64 { return digit; }
+        \\
+        \\fn digit0(
+        \\_: void,
+        \\ch: u8,
+        \\) !u4 {
+        \\  return std.fmt.parseInt(u4, &.{ch}, 16);
+        \\}
+        \\
+        \\};
         \\
     , array.items);
 }
 
-test "parse quoted string" {
+test "generate quoted string" {
     var array = std.ArrayList(u8).init(std.testing.allocator);
     defer array.deinit();
     try ast.generate(array.writer(), asts.string);

@@ -1,16 +1,37 @@
-file = ws? rule file | ws? $;
+file = ws? toplevel file | ws? $;
+toplevel = pragma | block | rule;
 
-rule = ident ws? "=" ws? productions ws? ";";
+pragma = "#context" ws zig-ident ws? ":" ws? zig-type ";";
+
+block = "{" zig-code "}";
+zig-code = zig-code-el zig-code | ;
+zig-code-el = [^"{}]
+            | zig-string
+            | block
+            ;
+zig-string = ["] zig-ds-chars ["]
+           | ['] zig-ss-chars ['];
+zig-ds-chars = zig-ds-char zig-ds-chars | ;
+zig-ss-chars = zig-ss-char zig-ss-chars | ;
+zig-ds-char = [^\\"] | zig-char-escaped;
+zig-ss-char = [^\\'] | zig-char-escaped;
+zig-char-escaped = "\\" [\x00-\xff];
+
+rule = ident ws? type-annotation? ws? "=" ws? productions ws? ";";
 productions = production ws? "|" ws? productions | production;
 production = symbols ws? func?;
 symbols = symbol ws? symbols | ;
 symbol = ident | string | set | end;
 
-func? = "@" zig-ident | ;
+func? = "@" ws? "(" ws? args ws? ")" ws? block | ;
+args = zig-ident ws? "," ws? args | zig-ident | ;
 zig-ident = zig-ident-first-char zig-ident-rest;
 zig-ident-rest = zig-ident-char zig-ident-rest | ;
 zig-ident-first-char = [a-zA-Z_];
 zig-ident-char = [a-zA-Z0-9_];
+
+type-annotation? = ":" ws? zig-type | ;
+zig-type = block; // TODO
 
 ident = ident-char ident | ident-char;
 ident-char = [a-zA-Z0-9?!_-];
@@ -22,14 +43,14 @@ string-char-escaped = [\\"] | "x" hexdig hexdig;
 
 set = "[" set-invert? set-entries "]";
 set-invert? = "^" | ;
-set-entries = set-entry set-entries | set-entry ;
+set-entries = set-entry set-entries | set-entry;
 set-entry = set-char "-" set-char | set-char;
 set-char = [^\[\]\\] | "\\" set-char-escaped;
 set-char-escaped = [\[\]\\] | "x" hexdig hexdig;
 
-ws? = [ \x09\x0a] ws?
+ws? = ws | ;
+ws = [ \x09\x0a] ws?
     | "//" comment "\x0a" ws?
-	|
     ;
 comment = [^\x0a] comment | ;
 

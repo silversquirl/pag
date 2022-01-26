@@ -7,13 +7,134 @@ const ast = @import("ast.zig");
 
 usingnamespace struct {
     pub const file: pag.Rule = &.{
-        .{ .syms = &.{ .{ .nt = .ws }, .{ .nt = .rule }, .{ .nt = .file } }, .func = funcs.file0 },
+        .{
+            .syms = &.{ .{ .nt = .ws }, .{ .nt = .toplevel }, .{ .nt = .file } },
+            .func = funcs.file0,
+        },
         .{ .syms = &.{ .{ .nt = .ws }, .end }, .func = funcs.file1 },
+    };
+    pub const toplevel: pag.Rule = &.{
+        .{ .syms = &.{.{ .nt = .pragma }}, .func = funcs.toplevel0 },
+        .{ .syms = &.{.{ .nt = .block }}, .func = funcs.toplevel1 },
+        .{ .syms = &.{.{ .nt = .rule }}, .func = funcs.toplevel2 },
+    };
+
+    pub const pragma: pag.Rule = &.{
+        .{ .syms = &.{
+            .{ .str = "#context" },
+            .{ .nt = .required_ws },
+            .{ .nt = .@"zig-ident" },
+            .{ .nt = .ws },
+            .{ .str = ":" },
+            .{ .nt = .ws },
+            .{ .nt = .@"zig-type" },
+            .{ .nt = .ws },
+            .{ .str = ";" },
+        }, .func = funcs.pragma0 },
+    };
+
+    pub const block: pag.Rule = &.{
+        .{ .syms = &.{
+            .{ .str = "{" },
+            .{ .nt = .@"zig-code" },
+            .{ .str = "}" },
+        }, .func = funcs.block0 },
+    };
+
+    pub const @"zig-code": pag.Rule = &.{
+        .{ .syms = &.{
+            .{ .nt = .@"zig-code-el" },
+            .{ .nt = .@"zig-code" },
+        }, .func = funcs.ArrayBuilder(u8).extend },
+        .{ .syms = &.{}, .func = funcs.ArrayBuilder(u8).empty },
+    };
+
+    pub const @"zig-code-el": pag.Rule = &.{
+        .{ .syms = &.{
+            .{ .set = &pag.SetBuilder.init()
+                .add("\"")
+                .add("{")
+                .add("}")
+                .invert()
+                .set },
+        }, .func = funcs.zig_code_el0 },
+        .{ .syms = &.{
+            .{ .nt = .@"zig-string" },
+        }, .func = funcs.zig_code_el1 },
+        .{ .syms = &.{
+            .{ .nt = .block },
+        }, .func = funcs.zig_code_el2 },
+    };
+
+    pub const @"zig-string": pag.Rule = &.{
+        .{ .syms = &.{
+            .{ .str = "\"" },
+            .{ .nt = .@"zig-ds-chars" },
+            .{ .str = "\"" },
+        }, .func = funcs.zig_string },
+        .{ .syms = &.{
+            .{ .str = "'" },
+            .{ .nt = .@"zig-ss-chars" },
+            .{ .str = "'" },
+        }, .func = funcs.zig_string },
+    };
+
+    pub const @"zig-ds-chars": pag.Rule = &.{
+        .{ .syms = &.{
+            .{ .nt = .@"zig-ds-char" },
+            .{ .nt = .@"zig-ds-chars" },
+        }, .func = funcs.ArrayBuilder(u8).build },
+        .{ .syms = &.{}, .func = funcs.ArrayBuilder(u8).empty },
+    };
+
+    pub const @"zig-ss-chars": pag.Rule = &.{
+        .{ .syms = &.{
+            .{ .nt = .@"zig-ss-char" },
+            .{ .nt = .@"zig-ss-chars" },
+        }, .func = funcs.ArrayBuilder(u8).build },
+        .{ .syms = &.{}, .func = funcs.ArrayBuilder(u8).empty },
+    };
+
+    pub const @"zig-ds-char": pag.Rule = &.{
+        .{ .syms = &.{
+            .{ .set = &pag.SetBuilder.init()
+                .add("\\")
+                .add("\"")
+                .invert()
+                .set },
+        }, .func = funcs.char },
+        .{ .syms = &.{
+            .{ .nt = .@"zig-char-escaped" },
+        }, .func = funcs.char },
+    };
+
+    pub const @"zig-ss-char": pag.Rule = &.{
+        .{ .syms = &.{
+            .{ .set = &pag.SetBuilder.init()
+                .add("\\")
+                .add("'")
+                .invert()
+                .set },
+        }, .func = funcs.char },
+        .{ .syms = &.{
+            .{ .nt = .@"zig-char-escaped" },
+        }, .func = funcs.char },
+    };
+
+    pub const @"zig-char-escaped": pag.Rule = &.{
+        .{ .syms = &.{
+            .{ .str = "\\" },
+            .{ .set = &pag.SetBuilder.init()
+                .addRange('\x00', '\xff')
+                .set },
+        }, .func = funcs.string_char1 },
     };
 
     pub const rule: pag.Rule = &.{
         .{ .syms = &.{
             .{ .nt = .ident },
+            .{ .nt = .ws },
+            .{ .nt = .@"type-annotation?" },
             .{ .nt = .ws },
             .{ .str = "=" },
             .{ .nt = .ws },
@@ -30,11 +151,13 @@ usingnamespace struct {
             .{ .nt = .ws },
             .{ .nt = .productions },
         }, .func = funcs.productions0 },
-        .{ .syms = &.{.{ .nt = .production }}, .func = funcs.productions1 },
+        .{ .syms = &.{
+            .{ .nt = .production },
+        }, .func = funcs.ArrayBuilder(ast.Production).one },
     };
     pub const production: pag.Rule = &.{
         .{
-            .syms = &.{ .{ .nt = .symbols }, .{ .nt = .ws }, .{ .nt = .func } },
+            .syms = &.{ .{ .nt = .symbols }, .{ .nt = .ws }, .{ .nt = .@"func?" } },
             .func = funcs.production0,
         },
     };
@@ -52,27 +175,51 @@ usingnamespace struct {
         .{ .syms = &.{.{ .nt = .end }}, .func = funcs.symbol3 },
     };
 
-    pub const func: pag.Rule = &.{
-        .{ .syms = &.{ .{ .str = "@" }, .{ .nt = .zig_ident } }, .func = funcs.func0 },
+    pub const @"func?": pag.Rule = &.{
+        .{ .syms = &.{
+            .{ .str = "@" },
+            .{ .nt = .ws },
+            .{ .str = "(" },
+            .{ .nt = .ws },
+            .{ .nt = .args },
+            .{ .nt = .ws },
+            .{ .str = ")" },
+            .{ .nt = .ws },
+            .{ .nt = .block },
+        }, .func = funcs.func0 },
         .{ .syms = &.{}, .func = funcs.func1 },
     };
-    pub const zig_ident: pag.Rule = &.{
-        .{
-            .syms = &.{ .{ .nt = .zig_ident_first_char }, .{ .nt = .zig_ident_rest } },
-            .func = funcs.ArrayBuilder(u8).build,
-        },
+
+    pub const args: pag.Rule = &.{
+        .{ .syms = &.{
+            .{ .nt = .@"zig-ident" },
+            .{ .nt = .ws },
+            .{ .str = "," },
+            .{ .nt = .ws },
+            .{ .nt = .args },
+        }, .func = funcs.args0 },
+        .{ .syms = &.{
+            .{ .nt = .@"zig-ident" },
+        }, .func = funcs.ArrayBuilder([]const u8).one },
+        .{ .syms = &.{}, .func = funcs.ArrayBuilder([]const u8).empty },
     };
-    pub const zig_ident_rest: pag.Rule = &.{
-        .{
-            .syms = &.{ .{ .nt = .zig_ident_char }, .{ .nt = .zig_ident_rest } },
-            .func = funcs.ArrayBuilder(u8).build,
-        },
-        .{
-            .syms = &.{},
-            .func = funcs.ArrayBuilder(u8).empty,
-        },
+
+    pub const @"zig-ident": pag.Rule = &.{
+        .{ .syms = &.{
+            .{ .nt = .@"zig-ident-first-char" },
+            .{ .nt = .@"zig-ident-rest" },
+        }, .func = funcs.zig_ident0 },
     };
-    pub const zig_ident_first_char: pag.Rule = &.{
+
+    pub const @"zig-ident-rest": pag.Rule = &.{
+        .{ .syms = &.{
+            .{ .nt = .@"zig-ident-char" },
+            .{ .nt = .@"zig-ident-rest" },
+        }, .func = funcs.ArrayBuilder(u8).build },
+        .{ .syms = &.{}, .func = funcs.ArrayBuilder(u8).empty },
+    };
+
+    pub const @"zig-ident-first-char": pag.Rule = &.{
         .{ .syms = &.{
             .{ .set = &pag.SetBuilder.init()
                 .addRange('a', 'z')
@@ -81,7 +228,8 @@ usingnamespace struct {
                 .set },
         }, .func = funcs.char },
     };
-    pub const zig_ident_char: pag.Rule = &.{
+
+    pub const @"zig-ident-char": pag.Rule = &.{
         .{ .syms = &.{
             .{ .set = &pag.SetBuilder.init()
                 .addRange('a', 'z')
@@ -90,6 +238,21 @@ usingnamespace struct {
                 .add("_")
                 .set },
         }, .func = funcs.char },
+    };
+
+    pub const @"type-annotation?": pag.Rule = &.{
+        .{ .syms = &.{
+            .{ .str = ":" },
+            .{ .nt = .ws },
+            .{ .nt = .@"zig-type" },
+        }, .func = funcs.type_annotation0 },
+        .{ .syms = &.{}, .func = funcs.type_annotation1 },
+    };
+
+    pub const @"zig-type": pag.Rule = &.{
+        .{ .syms = &.{
+            .{ .nt = .block },
+        }, .func = funcs.zig_type0 },
     };
 
     pub const ident: pag.Rule = &.{
@@ -206,6 +369,10 @@ usingnamespace struct {
     };
 
     pub const ws: pag.Rule = &.{
+        .{ .syms = &.{.{ .nt = .required_ws }} },
+        .{ .syms = &.{} },
+    };
+    pub const required_ws: pag.Rule = &.{
         .{ .syms = &.{
             .{ .set = &pag.SetBuilder.init()
                 .add(" \t\n")
@@ -218,7 +385,6 @@ usingnamespace struct {
             .{ .str = "\n" },
             .{ .nt = .ws },
         } },
-        .{ .syms = &.{} },
     };
     pub const comment: pag.Rule = &.{
         .{ .syms = &.{
@@ -248,28 +414,95 @@ const funcs = struct {
     fn file0(
         allocator: Allocator,
         _: void,
-        rule: ast.Rule,
-        rest: ?ast.List(ast.Rule),
-    ) !?ast.List(ast.Rule) {
-        return try ast.List(ast.Rule).initAlloc(allocator, rule, rest);
+        tl: ast.Toplevel,
+        rest: std.ArrayListUnmanaged(ast.Toplevel),
+    ) !std.ArrayListUnmanaged(ast.Toplevel) {
+        return ArrayBuilder(ast.Toplevel).build(allocator, tl, rest);
     }
-    fn file1(_: Allocator, _: void, _: void) ?ast.List(ast.Rule) {
-        return null;
+    fn file1(allocator: Allocator, _: void, _: void) std.ArrayListUnmanaged(ast.Toplevel) {
+        return ArrayBuilder(ast.Toplevel).empty(allocator);
+    }
+
+    fn toplevel0(_: Allocator, pragma: ast.Pragma) ast.Toplevel {
+        return .{ .pragma = pragma };
+    }
+    fn toplevel1(_: Allocator, block: []const u8) ast.Toplevel {
+        return .{ .block = block };
+    }
+    fn toplevel2(_: Allocator, rule: ast.Rule) ast.Toplevel {
+        return .{ .rule = rule };
+    }
+
+    fn pragma0(
+        _: Allocator,
+        _: []const u8,
+        _: void,
+        name: []const u8,
+        _: void,
+        _: []const u8,
+        _: void,
+        ty: []const u8,
+        _: void,
+        _: []const u8,
+    ) ast.Pragma {
+        return .{ .context = .{
+            .name = name,
+            .type = ty,
+        } };
+    }
+
+    fn block0(
+        allocator: Allocator,
+        _: []const u8,
+        code: std.ArrayListUnmanaged(u8),
+        _: []const u8,
+    ) []const u8 {
+        return ArrayBuilder(u8).finish(allocator, code);
+    }
+    fn zig_code_el0(allocator: Allocator, ch: u8) ![]const u8 {
+        const str = try allocator.alloc(u8, 1);
+        str[0] = ch;
+        return str;
+    }
+    fn zig_code_el1(_: Allocator, str: []const u8) []const u8 {
+        return str;
+    }
+    fn zig_code_el2(allocator: Allocator, str: []const u8) ![]const u8 {
+        var array = try std.ArrayList(u8).initCapacity(allocator, str.len + 2);
+        array.appendAssumeCapacity('{');
+        array.appendSliceAssumeCapacity(str);
+        array.appendAssumeCapacity('}');
+        allocator.free(str);
+        return array.toOwnedSlice();
+    }
+    fn zig_string(
+        allocator: Allocator,
+        delim0: []const u8,
+        str: std.ArrayListUnmanaged(u8),
+        delim1: []const u8,
+    ) ![]const u8 {
+        var str_var = str;
+        try str_var.insertSlice(allocator, 0, delim0);
+        try str_var.appendSlice(allocator, delim1);
+        return ArrayBuilder(u8).finish(allocator, str_var);
     }
 
     fn rule0(
         allocator: Allocator,
         name: []const u8,
         _: void,
+        result_type: ?[]const u8,
+        _: void,
         _: []const u8,
         _: void,
-        prods: ast.List(ast.Production),
+        prods: std.ArrayListUnmanaged(ast.Production),
         _: void,
         _: []const u8,
     ) !ast.Rule {
         return ast.Rule{
             .name = name,
-            .prods = try ast.List(ast.Production).collect(prods, allocator),
+            .type = result_type orelse "void",
+            .prods = ArrayBuilder(ast.Production).finish(allocator, prods),
         };
     }
 
@@ -279,9 +512,9 @@ const funcs = struct {
         _: void,
         _: []const u8,
         _: void,
-        rest: ast.List(ast.Production),
-    ) !ast.List(ast.Production) {
-        return try ast.List(ast.Production).initAlloc(allocator, prod, rest);
+        rest: std.ArrayListUnmanaged(ast.Production),
+    ) !std.ArrayListUnmanaged(ast.Production) {
+        return ArrayBuilder(ast.Production).build(allocator, prod, rest);
     }
     fn productions1(_: Allocator, prod: ast.Production) ast.List(ast.Production) {
         return .{ .value = prod };
@@ -289,14 +522,15 @@ const funcs = struct {
 
     fn production0(
         allocator: Allocator,
-        syms: ?ast.List(ast.Symbol),
+        syms_list: ?ast.List(ast.Symbol),
         _: void,
-        func: ?[]const u8,
+        func: ?ast.Func,
     ) !ast.Production {
-        return ast.Production{
-            .syms = try ast.List(ast.Symbol).collect(syms, allocator),
-            .func = func,
-        };
+        const syms = try ast.List(ast.Symbol).collect(syms_list, allocator);
+        if (func != null and syms.len != func.?.args.len) {
+            return error.InvalidArity;
+        }
+        return ast.Production{ .syms = syms, .func = func };
     }
 
     fn symbols0(
@@ -323,11 +557,55 @@ const funcs = struct {
         return .end;
     }
 
-    fn func0(allocator: Allocator, _: []const u8, ident: std.ArrayListUnmanaged(u8)) ?[]const u8 {
-        return ArrayBuilder(u8).finish(allocator, ident);
+    fn func0(
+        allocator: Allocator,
+        _: []const u8,
+        _: void,
+        _: []const u8,
+        _: void,
+        args: std.ArrayListUnmanaged([]const u8),
+        _: void,
+        _: []const u8,
+        _: void,
+        block: []const u8,
+    ) ?ast.Func {
+        return ast.Func{
+            .args = ArrayBuilder([]const u8).finish(allocator, args),
+            .code = block,
+        };
     }
-    fn func1(_: Allocator) ?[]const u8 {
+    fn func1(_: Allocator) ?ast.Func {
         return null;
+    }
+
+    fn zig_ident0(
+        allocator: Allocator,
+        first_char: u8,
+        rest: std.ArrayListUnmanaged(u8),
+    ) ![]const u8 {
+        const id = try ArrayBuilder(u8).build(allocator, first_char, rest);
+        return ArrayBuilder(u8).finish(allocator, id);
+    }
+
+    fn args0(
+        allocator: Allocator,
+        ident: []const u8,
+        _: void,
+        _: []const u8,
+        _: void,
+        rest: std.ArrayListUnmanaged([]const u8),
+    ) !std.ArrayListUnmanaged([]const u8) {
+        return ArrayBuilder([]const u8).build(allocator, ident, rest);
+    }
+
+    fn type_annotation0(_: Allocator, _: []const u8, _: void, ty: []const u8) ?[]const u8 {
+        return ty;
+    }
+    fn type_annotation1(_: Allocator) ?[]const u8 {
+        return null;
+    }
+    fn zig_type0(_: Allocator, ty: []const u8) []const u8 {
+        return ty;
     }
 
     fn string0(
@@ -386,6 +664,17 @@ const funcs = struct {
             ) !std.ArrayListUnmanaged(T) {
                 var array_var = array;
                 try array_var.append(allocator, elem);
+                return array_var;
+            }
+            fn extend(
+                allocator: Allocator,
+                elems: []const T,
+                array: std.ArrayListUnmanaged(T),
+            ) !std.ArrayListUnmanaged(T) {
+                var array_var = array;
+                try array_var.appendSlice(allocator, elems);
+                std.mem.reverse(T, array_var.items[array.items.len..]);
+                allocator.free(elems);
                 return array_var;
             }
             fn empty(_: Allocator) std.ArrayListUnmanaged(T) {

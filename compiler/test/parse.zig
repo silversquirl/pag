@@ -3,10 +3,15 @@ const ast = @import("../ast.zig");
 const asts = @import("asts.zig");
 
 fn expectEqualAsts(expected: ast.File, actual: ast.File) !void {
-    try std.testing.expectEqual(expected.len, actual.len);
-    for (expected) |rule_e, i| {
-        const rule_a = actual[i];
+    try std.testing.expectEqualStrings(expected.header, actual.header);
+    try std.testing.expectEqualStrings(expected.context.name, actual.context.name);
+    try std.testing.expectEqualStrings(expected.context.type, actual.context.type);
+
+    try std.testing.expectEqual(expected.rules.len, actual.rules.len);
+    for (expected.rules) |rule_e, i| {
+        const rule_a = actual.rules[i];
         try std.testing.expectEqualStrings(rule_e.name, rule_a.name);
+        try std.testing.expectEqualStrings(rule_e.type, rule_a.type);
         try std.testing.expectEqual(rule_e.prods.len, rule_a.prods.len);
         for (rule_e.prods) |prod_e, j| {
             const prod_a = rule_a.prods[j];
@@ -26,10 +31,14 @@ fn expectEqualAsts(expected: ast.File, actual: ast.File) !void {
             }
 
             if (prod_e.func == null) {
-                try std.testing.expectEqual(prod_e.func, prod_a.func);
+                try std.testing.expect(prod_a.func == null);
             } else {
                 try std.testing.expect(prod_a.func != null);
-                try std.testing.expectEqualStrings(prod_e.func.?, prod_a.func.?);
+                for (prod_e.func.?.args) |arg_e, l| {
+                    const arg_a = prod_a.func.?.args[l];
+                    try std.testing.expectEqualStrings(arg_e, arg_a);
+                }
+                try std.testing.expectEqualStrings(prod_e.func.?.code, prod_a.func.?.code);
             }
         }
     }
@@ -49,8 +58,13 @@ test "parse parens" {
 
 test "parse hex number" {
     const source =
-        \\num   = digit num | digit;
-        \\digit = [0-9a-fA-F];
+        \\{const std = @import("std");}
+        \\
+        \\num: {u64} = digit num @(digit, num) { return num << 4 | digit; }
+        \\           | digit @(digit) { return digit; };
+        \\digit: {u4} = [0-9a-fA-F] @(ch) {
+        \\  return std.fmt.parseInt(u4, &.{ch}, 16);
+        \\};
     ;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

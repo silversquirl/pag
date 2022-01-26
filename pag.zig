@@ -226,7 +226,9 @@ pub const SetBuilder = struct {
         return .{};
     }
 
-    pub fn add(self_const: SetBuilder, chars: []const u8) SetBuilder {
+    pub fn add(comptime self_const: SetBuilder, comptime chars: []const u8) SetBuilder {
+        @setEvalBranchQuota(8 * chars.len);
+
         var self = self_const;
         for (chars) |ch| {
             self.set.set(ch);
@@ -234,7 +236,9 @@ pub const SetBuilder = struct {
         return self;
     }
 
-    pub fn addRange(self_const: SetBuilder, start: u8, end: u8) SetBuilder {
+    pub fn addRange(comptime self_const: SetBuilder, comptime start: u8, comptime end: u8) SetBuilder {
+        @setEvalBranchQuota(8 * (@as(u32, end - start) + 1));
+
         var self = self_const;
         var ch = start;
         while (true) {
@@ -245,7 +249,7 @@ pub const SetBuilder = struct {
         return self;
     }
 
-    pub fn invert(self_const: SetBuilder) SetBuilder {
+    pub fn invert(comptime self_const: SetBuilder) SetBuilder {
         var self = self_const;
         self.set.toggleAll();
         return self;
