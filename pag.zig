@@ -15,10 +15,20 @@ pub fn parse(
     } else |err| {
         if (err == error.InvalidParse) {
             const info = p.err.?;
-            std.debug.print("{}: error: {}\n", .{
-                p.linePos(info.off),
-                info.err,
-            });
+            const line_pos = p.linePos(info.off);
+            std.debug.print("{}: error: {}\n", .{ line_pos, info.err });
+
+            const line = p.line(info.off);
+            // TODO: handle weird control chars properly
+            std.debug.print("{s}\n", .{line});
+            for (line[0..line_pos.col -| 1]) |c| {
+                const ws: u8 = switch (c) {
+                    '\t' => '\t',
+                    else => ' ',
+                };
+                std.debug.print("{c}", .{ws});
+            }
+            std.debug.print("^\n", .{});
         }
         return err;
     }
@@ -40,7 +50,8 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
         const BaseError = error{InvalidParse};
         const Self = @This();
 
-        fn e(self: *Self, expected: []const []const u8, off: usize) BaseError {
+        fn e(self: *Self, comptime expected: []const []const u8, off: usize) BaseError {
+            // TODO: append to existing expected set unless offset has changed
             self.err = ErrorInfo{
                 .off = off,
                 .err = .{
@@ -53,6 +64,25 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
             };
             return error.InvalidParse;
         }
+
+        pub fn line(self: Self, off: usize) []const u8 {
+            var start = off;
+            while (start > 0) {
+                start -= 1;
+                if (self.text[start] == '\n') {
+                    start += 1;
+                    break;
+                }
+            }
+
+            var end = off;
+            while (end < self.text.len) : (end += 1) {
+                if (self.text[end] == '\n') break;
+            }
+
+            return self.text[start..end];
+        }
+
         pub fn linePos(self: Self, off: usize) LinePos {
             var pos = LinePos{ .line = 1, .col = 0 };
             for (self.text) |ch, i| {
@@ -94,7 +124,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                 }
             }
 
-            return self.e(&.{@tagName(rule_name)}, off);
+            return error.InvalidParse;
         }
 
         fn parseProd(
@@ -162,11 +192,15 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                     result.* = self.text[off .. off + expected.len];
                     return expected.len;
                 } else {
-                    return self.e(&.{
-                        std.fmt.comptimePrint("\"{}\"", .{
-                            comptime std.zig.fmtEscapes(expected),
-                        }),
-                    }, off);
+                    const err_expected = comptime blk: {
+                        const single = std.mem.count(u8, expected, "'");
+                        const double = std.mem.count(u8, expected, "\"");
+                        const fmt = if (double > single) "'{'}'" else "\"{}\"";
+                        break :blk std.fmt.comptimePrint(fmt, .{
+                            std.zig.fmtEscapes(expected),
+                        });
+                    };
+                    return self.e(&.{err_expected}, off);
                 },
                 .set => |set| if (off < self.text.len and set.isSet(self.text[off])) {
                     result.* = self.text[off];
