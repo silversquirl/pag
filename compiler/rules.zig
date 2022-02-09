@@ -9,14 +9,24 @@ usingnamespace struct {
     pub const file: pag.Rule = &.{
         .{
             .syms = &.{ .{ .nt = .ws }, .{ .nt = .toplevel }, .{ .nt = .file } },
-            .func = funcs.file0,
+            .handler = struct {
+                pub const match = funcs.file0;
+            },
         },
-        .{ .syms = &.{ .{ .nt = .ws }, .end }, .func = funcs.file1 },
+        .{ .syms = &.{ .{ .nt = .ws }, .end }, .handler = struct {
+            pub const match = funcs.file1;
+        } },
     };
     pub const toplevel: pag.Rule = &.{
-        .{ .syms = &.{.{ .nt = .pragma }}, .func = funcs.toplevel0 },
-        .{ .syms = &.{.{ .nt = .block }}, .func = funcs.toplevel1 },
-        .{ .syms = &.{.{ .nt = .rule }}, .func = funcs.toplevel2 },
+        .{ .syms = &.{.{ .nt = .pragma }}, .handler = struct {
+            pub const match = funcs.toplevel0;
+        } },
+        .{ .syms = &.{.{ .nt = .block }}, .handler = struct {
+            pub const match = funcs.toplevel1;
+        } },
+        .{ .syms = &.{.{ .nt = .rule }}, .handler = struct {
+            pub const match = funcs.toplevel2;
+        } },
     };
 
     pub const pragma: pag.Rule = &.{
@@ -30,7 +40,9 @@ usingnamespace struct {
             .{ .nt = .@"zig-type" },
             .{ .nt = .ws },
             .{ .str = ";" },
-        }, .func = funcs.pragma0 },
+        }, .handler = struct {
+            pub const match = funcs.pragma0;
+        } },
     };
 
     pub const block: pag.Rule = &.{
@@ -38,15 +50,21 @@ usingnamespace struct {
             .{ .str = "{" },
             .{ .nt = .@"zig-code" },
             .{ .str = "}" },
-        }, .func = funcs.block0 },
+        }, .handler = struct {
+            pub const match = funcs.block0;
+        } },
     };
 
     pub const @"zig-code": pag.Rule = &.{
         .{ .syms = &.{
             .{ .nt = .@"zig-code-el" },
             .{ .nt = .@"zig-code" },
-        }, .func = funcs.ArrayBuilder(u8).extend },
-        .{ .syms = &.{}, .func = funcs.ArrayBuilder(u8).empty },
+        }, .handler = struct {
+            pub const match = funcs.ArrayBuilder(u8).extend;
+        } },
+        .{ .syms = &.{}, .handler = struct {
+            pub const match = funcs.ArrayBuilder(u8).empty;
+        } },
     };
 
     pub const @"zig-code-el": pag.Rule = &.{
@@ -57,13 +75,19 @@ usingnamespace struct {
                 .add("}")
                 .invert()
                 .set },
-        }, .func = funcs.zig_code_el0 },
+        }, .handler = struct {
+            pub const match = funcs.zig_code_el0;
+        } },
         .{ .syms = &.{
             .{ .nt = .@"zig-string" },
-        }, .func = funcs.zig_code_el1 },
+        }, .handler = struct {
+            pub const match = funcs.zig_code_el1;
+        } },
         .{ .syms = &.{
             .{ .nt = .block },
-        }, .func = funcs.zig_code_el2 },
+        }, .handler = struct {
+            pub const match = funcs.zig_code_el2;
+        } },
     };
 
     pub const @"zig-string": pag.Rule = &.{
@@ -71,28 +95,40 @@ usingnamespace struct {
             .{ .str = "\"" },
             .{ .nt = .@"zig-ds-chars" },
             .{ .str = "\"" },
-        }, .func = funcs.zig_string },
+        }, .handler = struct {
+            pub const match = funcs.zig_string;
+        } },
         .{ .syms = &.{
             .{ .str = "'" },
             .{ .nt = .@"zig-ss-chars" },
             .{ .str = "'" },
-        }, .func = funcs.zig_string },
+        }, .handler = struct {
+            pub const match = funcs.zig_string;
+        } },
     };
 
     pub const @"zig-ds-chars": pag.Rule = &.{
         .{ .syms = &.{
             .{ .nt = .@"zig-ds-char" },
             .{ .nt = .@"zig-ds-chars" },
-        }, .func = funcs.ArrayBuilder(u8).build },
-        .{ .syms = &.{}, .func = funcs.ArrayBuilder(u8).empty },
+        }, .handler = struct {
+            pub const match = funcs.ArrayBuilder(u8).build;
+        } },
+        .{ .syms = &.{}, .handler = struct {
+            pub const match = funcs.ArrayBuilder(u8).empty;
+        } },
     };
 
     pub const @"zig-ss-chars": pag.Rule = &.{
         .{ .syms = &.{
             .{ .nt = .@"zig-ss-char" },
             .{ .nt = .@"zig-ss-chars" },
-        }, .func = funcs.ArrayBuilder(u8).build },
-        .{ .syms = &.{}, .func = funcs.ArrayBuilder(u8).empty },
+        }, .handler = struct {
+            pub const match = funcs.ArrayBuilder(u8).build;
+        } },
+        .{ .syms = &.{}, .handler = struct {
+            pub const match = funcs.ArrayBuilder(u8).empty;
+        } },
     };
 
     pub const @"zig-ds-char": pag.Rule = &.{
@@ -102,10 +138,14 @@ usingnamespace struct {
                 .add("\"")
                 .invert()
                 .set },
-        }, .func = funcs.char },
+        }, .handler = struct {
+            pub const match = funcs.char;
+        } },
         .{ .syms = &.{
             .{ .nt = .@"zig-char-escaped" },
-        }, .func = funcs.char },
+        }, .handler = struct {
+            pub const match = funcs.char;
+        } },
     };
 
     pub const @"zig-ss-char": pag.Rule = &.{
@@ -115,10 +155,14 @@ usingnamespace struct {
                 .add("'")
                 .invert()
                 .set },
-        }, .func = funcs.char },
+        }, .handler = struct {
+            pub const match = funcs.char;
+        } },
         .{ .syms = &.{
             .{ .nt = .@"zig-char-escaped" },
-        }, .func = funcs.char },
+        }, .handler = struct {
+            pub const match = funcs.char;
+        } },
     };
 
     pub const @"zig-char-escaped": pag.Rule = &.{
@@ -127,7 +171,9 @@ usingnamespace struct {
             .{ .set = &pag.SetBuilder.init()
                 .addRange('\x00', '\xff')
                 .set },
-        }, .func = funcs.string_char1 },
+        }, .handler = struct {
+            pub const match = funcs.string_char1;
+        } },
     };
 
     pub const rule: pag.Rule = &.{
@@ -141,7 +187,9 @@ usingnamespace struct {
             .{ .nt = .productions },
             .{ .nt = .ws },
             .{ .str = ";" },
-        }, .func = funcs.rule0 },
+        }, .handler = struct {
+            pub const match = funcs.rule0;
+        } },
     };
     pub const productions: pag.Rule = &.{
         .{ .syms = &.{
@@ -150,29 +198,47 @@ usingnamespace struct {
             .{ .str = "|" },
             .{ .nt = .ws },
             .{ .nt = .productions },
-        }, .func = funcs.productions0 },
+        }, .handler = struct {
+            pub const match = funcs.productions0;
+        } },
         .{ .syms = &.{
             .{ .nt = .production },
-        }, .func = funcs.ArrayBuilder(ast.Production).one },
+        }, .handler = struct {
+            pub const match = funcs.ArrayBuilder(ast.Production).one;
+        } },
     };
     pub const production: pag.Rule = &.{
         .{
             .syms = &.{ .{ .nt = .symbols }, .{ .nt = .ws }, .{ .nt = .@"func?" } },
-            .func = funcs.production0,
+            .handler = struct {
+                pub const match = funcs.production0;
+            },
         },
     };
     pub const symbols: pag.Rule = &.{
         .{
             .syms = &.{ .{ .nt = .symbol }, .{ .nt = .ws }, .{ .nt = .symbols } },
-            .func = funcs.symbols0,
+            .handler = struct {
+                pub const match = funcs.symbols0;
+            },
         },
-        .{ .syms = &.{}, .func = funcs.symbols1 },
+        .{ .syms = &.{}, .handler = struct {
+            pub const match = funcs.symbols1;
+        } },
     };
     pub const symbol: pag.Rule = &.{
-        .{ .syms = &.{.{ .nt = .ident }}, .func = funcs.symbol0 },
-        .{ .syms = &.{.{ .nt = .string }}, .func = funcs.symbol1 },
-        .{ .syms = &.{.{ .nt = .set }}, .func = funcs.symbol2 },
-        .{ .syms = &.{.{ .nt = .end }}, .func = funcs.symbol3 },
+        .{ .syms = &.{.{ .nt = .ident }}, .handler = struct {
+            pub const match = funcs.symbol0;
+        } },
+        .{ .syms = &.{.{ .nt = .string }}, .handler = struct {
+            pub const match = funcs.symbol1;
+        } },
+        .{ .syms = &.{.{ .nt = .set }}, .handler = struct {
+            pub const match = funcs.symbol2;
+        } },
+        .{ .syms = &.{.{ .nt = .end }}, .handler = struct {
+            pub const match = funcs.symbol3;
+        } },
     };
 
     pub const @"func?": pag.Rule = &.{
@@ -186,8 +252,12 @@ usingnamespace struct {
             .{ .str = ")" },
             .{ .nt = .ws },
             .{ .nt = .block },
-        }, .func = funcs.func0 },
-        .{ .syms = &.{}, .func = funcs.func1 },
+        }, .handler = struct {
+            pub const match = funcs.func0;
+        } },
+        .{ .syms = &.{}, .handler = struct {
+            pub const match = funcs.func1;
+        } },
     };
 
     pub const args: pag.Rule = &.{
@@ -197,26 +267,38 @@ usingnamespace struct {
             .{ .str = "," },
             .{ .nt = .ws },
             .{ .nt = .args },
-        }, .func = funcs.args0 },
+        }, .handler = struct {
+            pub const match = funcs.args0;
+        } },
         .{ .syms = &.{
             .{ .nt = .@"zig-ident" },
-        }, .func = funcs.ArrayBuilder([]const u8).one },
-        .{ .syms = &.{}, .func = funcs.ArrayBuilder([]const u8).empty },
+        }, .handler = struct {
+            pub const match = funcs.ArrayBuilder([]const u8).one;
+        } },
+        .{ .syms = &.{}, .handler = struct {
+            pub const match = funcs.ArrayBuilder([]const u8).empty;
+        } },
     };
 
     pub const @"zig-ident": pag.Rule = &.{
         .{ .syms = &.{
             .{ .nt = .@"zig-ident-first-char" },
             .{ .nt = .@"zig-ident-rest" },
-        }, .func = funcs.zig_ident0 },
+        }, .handler = struct {
+            pub const match = funcs.zig_ident0;
+        } },
     };
 
     pub const @"zig-ident-rest": pag.Rule = &.{
         .{ .syms = &.{
             .{ .nt = .@"zig-ident-char" },
             .{ .nt = .@"zig-ident-rest" },
-        }, .func = funcs.ArrayBuilder(u8).build },
-        .{ .syms = &.{}, .func = funcs.ArrayBuilder(u8).empty },
+        }, .handler = struct {
+            pub const match = funcs.ArrayBuilder(u8).build;
+        } },
+        .{ .syms = &.{}, .handler = struct {
+            pub const match = funcs.ArrayBuilder(u8).empty;
+        } },
     };
 
     pub const @"zig-ident-first-char": pag.Rule = &.{
@@ -226,7 +308,9 @@ usingnamespace struct {
                 .addRange('A', 'Z')
                 .add("_")
                 .set },
-        }, .func = funcs.char },
+        }, .handler = struct {
+            pub const match = funcs.char;
+        } },
     };
 
     pub const @"zig-ident-char": pag.Rule = &.{
@@ -237,7 +321,9 @@ usingnamespace struct {
                 .addRange('0', '9')
                 .add("_")
                 .set },
-        }, .func = funcs.char },
+        }, .handler = struct {
+            pub const match = funcs.char;
+        } },
     };
 
     pub const @"type-annotation?": pag.Rule = &.{
@@ -245,25 +331,37 @@ usingnamespace struct {
             .{ .str = ":" },
             .{ .nt = .ws },
             .{ .nt = .@"zig-type" },
-        }, .func = funcs.type_annotation0 },
-        .{ .syms = &.{}, .func = funcs.type_annotation1 },
+        }, .handler = struct {
+            pub const match = funcs.type_annotation0;
+        } },
+        .{ .syms = &.{}, .handler = struct {
+            pub const match = funcs.type_annotation1;
+        } },
     };
 
     pub const @"zig-type": pag.Rule = &.{
         .{ .syms = &.{
             .{ .nt = .block },
-        }, .func = funcs.zig_type0 },
+        }, .handler = struct {
+            pub const match = funcs.zig_type0;
+        } },
     };
 
     pub const ident: pag.Rule = &.{
-        .{ .syms = &.{.{ .nt = .ident_rev }}, .func = funcs.ArrayBuilder(u8).finish },
+        .{ .syms = &.{.{ .nt = .ident_rev }}, .handler = struct {
+            pub const match = funcs.ArrayBuilder(u8).finish;
+        } },
     };
     pub const ident_rev: pag.Rule = &.{
         .{
             .syms = &.{ .{ .nt = .ident_char }, .{ .nt = .ident_rev } },
-            .func = funcs.ArrayBuilder(u8).build,
+            .handler = struct {
+                pub const match = funcs.ArrayBuilder(u8).build;
+            },
         },
-        .{ .syms = &.{.{ .nt = .ident_char }}, .func = funcs.ArrayBuilder(u8).one },
+        .{ .syms = &.{.{ .nt = .ident_char }}, .handler = struct {
+            pub const match = funcs.ArrayBuilder(u8).one;
+        } },
     };
     pub const ident_char: pag.Rule = &.{
         .{ .syms = &.{
@@ -273,21 +371,29 @@ usingnamespace struct {
                 .addRange('0', '9')
                 .add("?!_-")
                 .set },
-        }, .func = funcs.char },
+        }, .handler = struct {
+            pub const match = funcs.char;
+        } },
     };
 
     pub const string: pag.Rule = &.{
         .{
             .syms = &.{ .{ .str = "\"" }, .{ .nt = .string_chars }, .{ .str = "\"" } },
-            .func = funcs.string0,
+            .handler = struct {
+                pub const match = funcs.string0;
+            },
         },
     };
     pub const string_chars: pag.Rule = &.{
         .{
             .syms = &.{ .{ .nt = .string_char }, .{ .nt = .string_chars } },
-            .func = funcs.ArrayBuilder(u8).build,
+            .handler = struct {
+                pub const match = funcs.ArrayBuilder(u8).build;
+            },
         },
-        .{ .syms = &.{}, .func = funcs.ArrayBuilder(u8).empty },
+        .{ .syms = &.{}, .handler = struct {
+            pub const match = funcs.ArrayBuilder(u8).empty;
+        } },
     };
     pub const string_char: pag.Rule = &.{
         .{ .syms = &.{
@@ -295,23 +401,31 @@ usingnamespace struct {
                 .add("\\\"")
                 .invert()
                 .set },
-        }, .func = funcs.char },
+        }, .handler = struct {
+            pub const match = funcs.char;
+        } },
         .{ .syms = &.{
             .{ .str = "\\" },
             .{ .nt = .string_char_escaped },
-        }, .func = funcs.string_char1 },
+        }, .handler = struct {
+            pub const match = funcs.string_char1;
+        } },
     };
     pub const string_char_escaped: pag.Rule = &.{
         .{ .syms = &.{
             .{ .set = &pag.SetBuilder.init()
                 .add("\\\"")
                 .set },
-        }, .func = funcs.char },
+        }, .handler = struct {
+            pub const match = funcs.char;
+        } },
         .{ .syms = &.{
             .{ .str = "x" },
             .{ .nt = .hexdig },
             .{ .nt = .hexdig },
-        }, .func = funcs.string_char_escaped1 },
+        }, .handler = struct {
+            pub const match = funcs.string_char_escaped1;
+        } },
     };
 
     pub const set: pag.Rule = &.{
@@ -322,26 +436,40 @@ usingnamespace struct {
                 .{ .nt = .set_entries },
                 .{ .str = "]" },
             },
-            .func = funcs.set0,
+            .handler = struct {
+                pub const match = funcs.set0;
+            },
         },
     };
     pub const set_invert: pag.Rule = &.{
-        .{ .syms = &.{.{ .str = "^" }}, .func = funcs.set_invert0 },
-        .{ .syms = &.{}, .func = funcs.set_invert1 },
+        .{ .syms = &.{.{ .str = "^" }}, .handler = struct {
+            pub const match = funcs.set_invert0;
+        } },
+        .{ .syms = &.{}, .handler = struct {
+            pub const match = funcs.set_invert1;
+        } },
     };
     pub const set_entries: pag.Rule = &.{
         .{
             .syms = &.{ .{ .nt = .set_entry }, .{ .nt = .set_entries } },
-            .func = funcs.ArrayBuilder(ast.Set.Entry).build,
+            .handler = struct {
+                pub const match = funcs.ArrayBuilder(ast.Set.Entry).build;
+            },
         },
-        .{ .syms = &.{.{ .nt = .set_entry }}, .func = funcs.ArrayBuilder(ast.Set.Entry).one },
+        .{ .syms = &.{.{ .nt = .set_entry }}, .handler = struct {
+            pub const match = funcs.ArrayBuilder(ast.Set.Entry).one;
+        } },
     };
     pub const set_entry: pag.Rule = &.{
         .{
             .syms = &.{ .{ .nt = .set_char }, .{ .str = "-" }, .{ .nt = .set_char } },
-            .func = funcs.set_entry0,
+            .handler = struct {
+                pub const match = funcs.set_entry0;
+            },
         },
-        .{ .syms = &.{.{ .nt = .set_char }}, .func = funcs.set_entry1 },
+        .{ .syms = &.{.{ .nt = .set_char }}, .handler = struct {
+            pub const match = funcs.set_entry1;
+        } },
     };
     pub const set_char: pag.Rule = &.{
         .{ .syms = &.{
@@ -349,23 +477,31 @@ usingnamespace struct {
                 .add("[]\\")
                 .invert()
                 .set },
-        }, .func = funcs.char },
+        }, .handler = struct {
+            pub const match = funcs.char;
+        } },
         .{ .syms = &.{
             .{ .str = "\\" },
             .{ .nt = .set_char_escaped },
-        }, .func = funcs.string_char1 },
+        }, .handler = struct {
+            pub const match = funcs.string_char1;
+        } },
     };
     pub const set_char_escaped: pag.Rule = &.{
         .{ .syms = &.{
             .{ .set = &pag.SetBuilder.init()
                 .add("[]\\")
                 .set },
-        }, .func = funcs.char },
+        }, .handler = struct {
+            pub const match = funcs.char;
+        } },
         .{ .syms = &.{
             .{ .str = "x" },
             .{ .nt = .hexdig },
             .{ .nt = .hexdig },
-        }, .func = funcs.string_char_escaped1 },
+        }, .handler = struct {
+            pub const match = funcs.string_char_escaped1;
+        } },
     };
 
     pub const ws: pag.Rule = &.{
@@ -404,7 +540,9 @@ usingnamespace struct {
                 .addRange('a', 'f')
                 .addRange('A', 'F')
                 .set },
-        }, .func = funcs.hexdig },
+        }, .handler = struct {
+            pub const match = funcs.hexdig;
+        } },
     };
 
     pub const end: pag.Rule = &.{.{ .syms = &.{.{ .str = "$" }} }};

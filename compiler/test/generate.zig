@@ -43,10 +43,21 @@ test "generate hex number" {
         \\.{ .syms = &.{
         \\.{ .nt = .digit },
         \\.{ .nt = .num },
-        \\}, .func = _pag_generated_funcs.num0 },
+        \\}, .handler = struct {
+        \\pub fn match(
+        \\_: void,
+        \\digit: u4,
+        \\num: u64,
+        \\) !u64 { return num << 4 | digit; }
+        \\} },
         \\.{ .syms = &.{
         \\.{ .nt = .digit },
-        \\}, .func = _pag_generated_funcs.num1 },
+        \\}, .handler = struct {
+        \\pub fn match(
+        \\_: void,
+        \\digit: u4,
+        \\) !u64 { return digit; }
+        \\} },
         \\};
         \\
         \\pub const digit: pag.Rule = &.{
@@ -56,28 +67,16 @@ test "generate hex number" {
         \\.addRange('a', 'f')
         \\.addRange('A', 'F')
         \\.set },
-        \\}, .func = _pag_generated_funcs.digit0 },
-        \\};
-        \\
-        \\const _pag_generated_funcs = struct {
-        \\fn num0(
-        \\_: void,
-        \\digit: u4,
-        \\num: u64,
-        \\) !u64 { return num << 4 | digit; }
-        \\fn num1(
-        \\_: void,
-        \\digit: u4,
-        \\) !u64 { return digit; }
-        \\
-        \\fn digit0(
+        \\}, .handler = struct {
+        \\pub fn match(
         \\_: void,
         \\ch: u8,
         \\) !u4 {
         \\  return std.fmt.parseInt(u4, &.{ch}, 16);
         \\}
-        \\
+        \\} },
         \\};
+        \\
         \\
     , array.items);
 }

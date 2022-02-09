@@ -152,22 +152,14 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
             off: usize,
             result: *ProdResult(prod),
         ) ProdError(prod)!usize {
-            if (@TypeOf(prod.func) == void) {
-                result.*; // Assert result is *void
-                var n: usize = 0;
-                inline for (prod.syms) |sym| {
-                    var res: SymbolResult(sym) = undefined;
-                    n += try self.parseSym(sym, off + n, &res);
-                }
-                return n;
-            } else {
-                var args: std.meta.ArgsTuple(@TypeOf(prod.func)) = undefined;
+            if (prod.handler) |h| {
+                var args: std.meta.ArgsTuple(@TypeOf(h.match)) = undefined;
                 args[0] = self.context;
 
                 if (args.len != prod.syms.len + 1) {
                     @compileError(comptime std.fmt.comptimePrint(
-                        "production function {} has incorrect arity (expected {}, got {})",
-                        .{ @TypeOf(prod.func), args.len, prod.syms.len + 1 },
+                        "production match handler {} has incorrect arity (expected {}, got {})",
+                        .{ @TypeOf(h.match), args.len, prod.syms.len + 1 },
                     ));
                 }
 
@@ -185,12 +177,20 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                     n += try self.parseSym(sym, off + n, &args[i + 1]);
                 }
 
-                const ret = @call(.{}, prod.func, args);
+                const ret = @call(.{}, h.match, args);
                 result.* = switch (@typeInfo(@TypeOf(ret))) {
                     .ErrorUnion => try ret,
                     else => ret,
                 };
 
+                return n;
+            } else {
+                result.*; // Assert result is *void
+                var n: usize = 0;
+                inline for (prod.syms) |sym| {
+                    var res: SymbolResult(sym) = undefined;
+                    n += try self.parseSym(sym, off + n, &res);
+                }
                 return n;
             }
         }
@@ -277,8 +277,8 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
         }
 
         fn ProdResult(comptime prod: Production) type {
-            if (@TypeOf(prod.func) == void) return void;
-            const ret = @typeInfo(@TypeOf(prod.func)).Fn.return_type.?;
+            const h = prod.handler orelse return void;
+            const ret = @typeInfo(@TypeOf(h.match)).Fn.return_type.?;
             return switch (@typeInfo(ret)) {
                 .ErrorUnion => |eu| eu.payload,
                 else => ret,
@@ -291,9 +291,9 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
         fn ProdErrorR(comptime prod: Production, comptime checked: RuleSet) type {
             var E = BaseError;
 
-            // Add func errors to the set
-            if (@TypeOf(prod.func) != void) {
-                const ret = @typeInfo(@TypeOf(prod.func)).Fn.return_type.?;
+            // Add handler errors to the set
+            if (prod.handler) |h| {
+                const ret = @typeInfo(@TypeOf(h.match)).Fn.return_type.?;
                 switch (@typeInfo(ret)) {
                     .ErrorUnion => |eu| E = E || eu.error_set,
                     else => {},
@@ -360,7 +360,7 @@ pub const ParseError = struct {
 pub const Rule = []const Production;
 pub const Production = struct {
     syms: []const Symbol,
-    func: anytype = {},
+    handler: ?type = null,
 };
 pub const Symbol = union(enum) {
     end: void,

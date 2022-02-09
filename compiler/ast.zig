@@ -49,10 +49,9 @@ pub fn generate(writer: anytype, file: File) !void {
         try writer.writeAll("\n\n");
     }
 
-    var have_funcs = false;
     for (file.rules) |rule| {
         try writer.print("pub const {}: pag.Rule = &.{{\n", .{std.zig.fmtId(rule.name)});
-        for (rule.prods) |prod, prod_i| {
+        for (rule.prods) |prod| {
             try writer.writeAll(".{ .syms = &.{\n");
             for (prod.syms) |sym| {
                 switch (sym) {
@@ -63,24 +62,12 @@ pub fn generate(writer: anytype, file: File) !void {
                 }
             }
             try writer.writeAll("}");
-            if (prod.func) |_| {
-                try writer.writeAll(", .func = _pag_generated_funcs.");
-                try writeNumberedId(writer, rule.name, prod_i);
-                have_funcs = true;
-            }
-            try writer.writeAll(" },\n");
-        }
-        try writer.writeAll("};\n\n");
-    }
 
-    if (have_funcs) {
-        try writer.writeAll("const _pag_generated_funcs = struct {\n");
-        for (file.rules) |rule| {
-            for (rule.prods) |prod, prod_i| {
+            if (prod.func) |_| {
+                try writer.writeAll(", .handler = struct {\n");
+
                 const func = prod.func orelse continue;
-                try writer.writeAll("fn ");
-                try writeNumberedId(writer, rule.name, prod_i);
-                try writer.writeAll("(\n");
+                try writer.writeAll("pub fn match(\n");
                 try writer.print("{s}: {s},\n", .{ file.context.name, file.context.type });
 
                 for (func.args) |arg_name, i| {
@@ -102,11 +89,12 @@ pub fn generate(writer: anytype, file: File) !void {
                     try writer.print("{s}: {s},\n", .{ arg_name, ty });
                 }
 
-                try writer.print(") !{s} {{{s}}}\n", .{ rule.type, func.code });
+                try writer.print(") !{s} {{{s}}}\n}}", .{ rule.type, func.code });
             }
-            try writer.writeAll("\n");
+
+            try writer.writeAll(" },\n");
         }
-        try writer.writeAll("};\n");
+        try writer.writeAll("};\n\n");
     }
 }
 fn generateSet(writer: anytype, set: Set) !void {
