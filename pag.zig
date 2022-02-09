@@ -10,6 +10,8 @@ pub fn parse(
         .context = context,
         .text = text,
     };
+    defer p.deinit();
+
     if (p.parse(start)) |result| {
         return result;
     } else |err| {
@@ -47,21 +49,38 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
 
         const RuleName = std.meta.DeclEnum(rules);
         const RuleSet = std.enums.EnumSet(RuleName);
-        const BaseError = error{InvalidParse};
+        const BaseError = error{ InvalidParse, OutOfMemory };
         const Self = @This();
+
+        pub fn deinit(self: Self) void {
+            if (self.err) |err| {
+                err.err.expected.deinit();
+            }
+        }
 
         fn e(self: *Self, comptime expected: []const []const u8, off: usize) BaseError {
             // TODO: append to existing expected set unless offset has changed
-            self.err = ErrorInfo{
-                .off = off,
-                .err = .{
-                    .expected = expected,
-                    .found = if (off < self.text.len)
-                        "" // TODO: get found token
-                    else
-                        "eof",
-                },
-            };
+            if (self.err == null or self.err.?.off != off) {
+                var expected_list = std.ArrayList([]const u8).init(std.heap.page_allocator);
+                if (self.err) |err| {
+                    expected_list = err.err.expected;
+                    expected_list.clearRetainingCapacity();
+                }
+
+                try expected_list.appendSlice(expected);
+                self.err = ErrorInfo{
+                    .off = off,
+                    .err = .{
+                        .expected = expected_list,
+                        .found = if (off < self.text.len)
+                            "" // TODO: get found token
+                        else
+                            "eof",
+                    },
+                };
+            } else {
+                try self.err.?.err.expected.appendSlice(expected);
+            }
             return error.InvalidParse;
         }
 
@@ -312,17 +331,18 @@ pub const LinePos = struct {
     }
 };
 pub const ParseError = struct {
-    expected: []const []const u8,
+    expected: std.ArrayList([]const u8),
     found: []const u8,
 
     pub fn format(self: ParseError, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try writer.writeAll("expected ");
 
-        std.debug.assert(self.expected.len > 0);
-        for (self.expected) |exp, i| {
+        const n_exp = self.expected.items.len;
+        std.debug.assert(n_exp > 0);
+        for (self.expected.items) |exp, i| {
             if (i > 0) {
-                if (i == self.expected.len - 1) {
-                    try writer.writeAll("or ");
+                if (i == n_exp - 1) {
+                    try writer.writeAll(" or ");
                 } else {
                     try writer.writeAll(", ");
                 }
