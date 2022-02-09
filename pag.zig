@@ -18,11 +18,31 @@ pub fn parse(
         if (err == error.InvalidParse) {
             const info = p.err.?;
             const line_pos = p.linePos(info.off);
-            std.debug.print("{}: error: {}\n", .{ line_pos, info.err });
 
-            const line = p.line(info.off);
+            // TODO: print file name as `filename:line:col`
+            std.debug.print("{}:\n", .{line_pos});
+
+            {
+                var n = line_pos.line;
+                while (n > 0) : (n /= 10) {
+                    std.debug.print(" ", .{});
+                }
+                std.debug.print("|\n", .{});
+            }
+
             // TODO: handle weird control chars properly
-            std.debug.print("{s}\n", .{line});
+            const line = p.line(info.off);
+            std.debug.print("{} | {s}\n", .{ line_pos.line, line });
+
+            {
+                var n = line_pos.line;
+                while (n > 0) : (n /= 10) {
+                    std.debug.print(" ", .{});
+                }
+                std.debug.print("| ", .{});
+            }
+
+            // TODO: handle weird control chars properly
             for (line[0..line_pos.col -| 1]) |c| {
                 const ws: u8 = switch (c) {
                     '\t' => '\t',
@@ -31,6 +51,10 @@ pub fn parse(
                 std.debug.print("{c}", .{ws});
             }
             std.debug.print("^\n", .{});
+
+            const use_ansi = std.io.getStdErr().supportsAnsiEscapeCodes();
+            const error_kw = if (use_ansi) "\x1b[1;31merror\x1b[0m" else "error";
+            std.debug.print("{s}: {}\n\n", .{ error_kw, info.err });
         }
         return err;
     }
