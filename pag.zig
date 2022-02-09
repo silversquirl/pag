@@ -6,43 +6,101 @@ pub fn parse(
     context: anytype,
     text: []const u8,
 ) !Parser(rules, @TypeOf(context)).RuleResult(start) {
-    const P = Parser(rules, @TypeOf(context));
-    var result: P.RuleResult(start) = undefined;
-    const n = try P.parseRule(start, context, text, &result);
-    if (n != text.len) {
-        return error.InvalidParse;
+    var p = Parser(rules, @TypeOf(context)){
+        .context = context,
+        .text = text,
+    };
+    if (p.parse(start)) |result| {
+        return result;
+    } else |err| {
+        if (err == error.InvalidParse) {
+            const info = p.err.?;
+            std.debug.print("{}: error: {}\n", .{
+                p.linePos(info.off),
+                info.err,
+            });
+        }
+        return err;
     }
-    return result;
 }
 
 pub fn Parser(comptime rules: type, comptime Context: type) type {
     return struct {
+        context: Context,
+        text: []const u8,
+        err: ?ErrorInfo = null,
+
+        pub const ErrorInfo = struct {
+            off: usize,
+            err: ParseError,
+        };
+
         const RuleName = std.meta.DeclEnum(rules);
         const RuleSet = std.enums.EnumSet(RuleName);
         const BaseError = error{InvalidParse};
+        const Self = @This();
+
+        fn e(self: *Self, expected: []const []const u8, off: usize) BaseError {
+            self.err = ErrorInfo{
+                .off = off,
+                .err = .{
+                    .expected = expected,
+                    .found = if (off < self.text.len)
+                        "" // TODO: get found token
+                    else
+                        "eof",
+                },
+            };
+            return error.InvalidParse;
+        }
+        pub fn linePos(self: Self, off: usize) LinePos {
+            var pos = LinePos{ .line = 1, .col = 0 };
+            for (self.text) |ch, i| {
+                pos.col += 1;
+                if (i >= off) {
+                    break;
+                }
+
+                if (ch == '\n') {
+                    pos.line += 1;
+                    pos.col = 0;
+                }
+            }
+            return pos;
+        }
+
+        pub fn parse(self: *Self, comptime start: RuleName) !RuleResult(start) {
+            var result: RuleResult(start) = undefined;
+            const n = try self.parseRule(start, 0, &result);
+            if (n != self.text.len) {
+                return self.e(&.{"eof"}, n);
+            }
+            return result;
+        }
 
         pub fn parseRule(
+            self: *Self,
             comptime rule_name: RuleName,
-            context: Context,
-            text: []const u8,
+            off: usize,
             result: *RuleResult(rule_name),
         ) RuleError(rule_name)!usize {
             const rule = @field(rules, @tagName(rule_name));
             inline for (rule) |prod| {
-                if (parseProd(prod, context, text, result)) |n| {
+                if (self.parseProd(prod, off, result)) |n| {
                     return n;
                 } else |err| switch (err) {
                     error.InvalidParse => {},
                     else => |e| return e,
                 }
             }
-            return error.InvalidParse;
+
+            return self.e(&.{@tagName(rule_name)}, off);
         }
 
         fn parseProd(
+            self: *Self,
             comptime prod: Production,
-            context: Context,
-            text: []const u8,
+            off: usize,
             result: *ProdResult(prod),
         ) ProdError(prod)!usize {
             if (@TypeOf(prod.func) == void) {
@@ -50,12 +108,12 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                 var n: usize = 0;
                 inline for (prod.syms) |sym| {
                     var res: SymbolResult(sym) = undefined;
-                    n += try parseSym(sym, context, text[n..], &res);
+                    n += try self.parseSym(sym, off + n, &res);
                 }
                 return n;
             } else {
                 var args: std.meta.ArgsTuple(@TypeOf(prod.func)) = undefined;
-                args[0] = context;
+                args[0] = self.context;
 
                 if (args.len != prod.syms.len + 1) {
                     @compileError(comptime std.fmt.comptimePrint(
@@ -75,7 +133,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                             .{ sym, expected, found },
                         ));
                     }
-                    n += try parseSym(sym, context, text[n..], &args[i + 1]);
+                    n += try self.parseSym(sym, off + n, &args[i + 1]);
                 }
 
                 const ret = @call(.{}, prod.func, args);
@@ -89,30 +147,34 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
         }
 
         fn parseSym(
+            self: *Self,
             comptime sym: Symbol,
-            context: Context,
-            text: []const u8,
+            off: usize,
             result: *SymbolResult(sym),
         ) !usize {
             switch (sym) {
-                .end => if (text.len == 0) {
+                .end => if (off >= self.text.len) {
                     return 0;
                 } else {
-                    return error.InvalidParse;
+                    return self.e(&.{"eof"}, off);
                 },
-                .str => |expected| if (std.mem.startsWith(u8, text, expected)) {
-                    result.* = text[0..expected.len];
+                .str => |expected| if (std.mem.startsWith(u8, self.text[off..], expected)) {
+                    result.* = self.text[off .. off + expected.len];
                     return expected.len;
                 } else {
-                    return error.InvalidParse;
+                    return self.e(&.{
+                        std.fmt.comptimePrint("\"{}\"", .{
+                            comptime std.zig.fmtEscapes(expected),
+                        }),
+                    }, off);
                 },
-                .set => |set| if (text.len > 0 and set.isSet(text[0])) {
-                    result.* = text[0];
+                .set => |set| if (off < self.text.len and set.isSet(self.text[off])) {
+                    result.* = self.text[off];
                     return 1;
                 } else {
-                    return error.InvalidParse;
+                    return self.e(&.{"<character set>"}, off); // TODO
                 },
-                .nt => |rule| return parseRule(rule, context, text, result),
+                .nt => |rule| return self.parseRule(rule, off, result),
             }
         }
 
@@ -206,6 +268,40 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
         }
     };
 }
+
+pub const LinePos = struct {
+    line: usize,
+    col: usize,
+
+    pub fn format(self: LinePos, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.print("{}:{}", .{ self.line, self.col });
+    }
+};
+pub const ParseError = struct {
+    expected: []const []const u8,
+    found: []const u8,
+
+    pub fn format(self: ParseError, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.writeAll("expected ");
+
+        std.debug.assert(self.expected.len > 0);
+        for (self.expected) |exp, i| {
+            if (i > 0) {
+                if (i == self.expected.len - 1) {
+                    try writer.writeAll("or ");
+                } else {
+                    try writer.writeAll(", ");
+                }
+            }
+
+            try writer.writeAll(exp);
+        }
+
+        if (self.found.len > 0) {
+            try writer.print(", found {s}", .{self.found});
+        }
+    }
+};
 
 pub const Rule = []const Production;
 pub const Production = struct {
