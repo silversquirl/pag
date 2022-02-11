@@ -85,6 +85,23 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
             return error.InvalidParse;
         }
 
+        // TODO: offset range
+        fn callbackError(self: *Self, off: usize) void {
+            if (self.err) |*err| {
+                err.err.expected.clearAndFree();
+                err.err.found = "";
+                err.off = off;
+            } else {
+                self.err = ErrorInfo{
+                    .off = off,
+                    .err = .{
+                        .expected = std.ArrayList([]const u8).init(std.heap.page_allocator),
+                        .found = "",
+                    },
+                };
+            }
+        }
+
         pub fn printError(self: *Self, w: anytype, opts: PrintErrorOpts) !void {
             try self.printErrorMessage(w, "{}", .{self.err.?.err}, opts);
         }
@@ -243,7 +260,10 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
 
                 const ret = @call(.{}, h.match, args);
                 result.* = switch (@typeInfo(@TypeOf(ret))) {
-                    .ErrorUnion => try ret,
+                    .ErrorUnion => ret catch |err| {
+                        self.callbackError(off);
+                        return err;
+                    },
                     else => ret,
                 };
 
@@ -636,4 +656,46 @@ test "quoted string" {
     try std.testing.expectError(error.InvalidParse, parse(rules, .string, {},
         \\"\x3k"
     ));
+}
+
+test "error reporting" {
+    // Construct a parser for matched paren pairs
+    const rules = struct {
+        pub const nested: Rule = &.{
+            .{ .syms = &.{ .{ .str = "(" }, .{ .nt = .many }, .{ .str = ")" } } },
+            .{ .syms = &.{.{ .str = "error" }}, .handler = struct {
+                pub fn match(_: void, _: []const u8) !void {
+                    return error.Error;
+                }
+            } },
+        };
+        pub const many: Rule = &.{
+            .{ .syms = &.{ .{ .nt = .nested }, .{ .nt = .many } } },
+            .{ .syms = &.{} },
+        };
+    };
+
+    {
+        var p = Parser(rules, void){
+            .text = "()(",
+            .context = {},
+        };
+        defer p.deinit();
+        try std.testing.expectError(error.InvalidParse, p.parse(.many));
+        try std.testing.expect(p.err != null);
+        try std.testing.expectEqual(@as(usize, 3), p.err.?.off);
+    }
+
+    {
+        var p = Parser(rules, void){
+            .text = "(error)",
+            .context = {},
+        };
+        defer p.deinit();
+        try std.testing.expectError(error.Error, p.parse(.many));
+        try std.testing.expect(p.err != null);
+        try std.testing.expectEqual(@as(usize, 1), p.err.?.off);
+        try std.testing.expectEqual(@as(usize, 0), p.err.?.err.expected.items.len);
+        try std.testing.expectEqualStrings("", p.err.?.err.found);
+    }
 }
