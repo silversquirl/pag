@@ -27,7 +27,7 @@ pub fn parse(
                 while (n > 0) : (n /= 10) {
                     std.debug.print(" ", .{});
                 }
-                std.debug.print("|\n", .{});
+                std.debug.print(" |\n", .{});
             }
 
             // TODO: handle weird control chars properly
@@ -39,11 +39,11 @@ pub fn parse(
                 while (n > 0) : (n /= 10) {
                     std.debug.print(" ", .{});
                 }
-                std.debug.print("| ", .{});
+                std.debug.print(" | ", .{});
             }
 
             // TODO: handle weird control chars properly
-            for (line[0..line_pos.col -| 1]) |c| {
+            for (line[0 .. line_pos.col - 1]) |c| {
                 const ws: u8 = switch (c) {
                     '\t' => '\t',
                     else => ' ',
@@ -83,8 +83,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
         }
 
         fn e(self: *Self, comptime expected: []const []const u8, off: usize) BaseError {
-            // TODO: append to existing expected set unless offset has changed
-            if (self.err == null or self.err.?.off != off) {
+            if (self.err == null or off > self.err.?.off) {
                 var expected_list = std.ArrayList([]const u8).init(std.heap.page_allocator);
                 if (self.err) |err| {
                     expected_list = err.err.expected;
@@ -102,8 +101,21 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                             "eof",
                     },
                 };
+            } else if (off < self.err.?.off) {
+                // Do nothing; we don't want to backtrack errors
             } else {
-                try self.err.?.err.expected.appendSlice(expected);
+                const list = &self.err.?.err.expected;
+                // O(n^2) but meh it's probably not a big deal
+                for (expected) |exp| {
+                    const add = for (list.items) |exist| {
+                        if (std.mem.eql(u8, exist, exp)) {
+                            break false;
+                        }
+                    } else true;
+                    if (add) {
+                        try list.append(exp);
+                    }
+                }
             }
             return error.InvalidParse;
         }
@@ -127,16 +139,17 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
         }
 
         pub fn linePos(self: Self, off: usize) LinePos {
-            var pos = LinePos{ .line = 1, .col = 0 };
+            var pos = LinePos{ .line = 1, .col = 1 };
             for (self.text) |ch, i| {
-                pos.col += 1;
                 if (i >= off) {
                     break;
                 }
 
                 if (ch == '\n') {
                     pos.line += 1;
-                    pos.col = 0;
+                    pos.col = 1;
+                } else {
+                    pos.col += 1;
                 }
             }
             return pos;
