@@ -16,45 +16,10 @@ pub fn parse(
         return result;
     } else |err| {
         if (err == error.InvalidParse) {
-            const info = p.err.?;
-            const line_pos = p.linePos(info.off);
-
-            // TODO: print file name as `filename:line:col`
-            std.debug.print("{}:\n", .{line_pos});
-
-            {
-                var n = line_pos.line;
-                while (n > 0) : (n /= 10) {
-                    std.debug.print(" ", .{});
-                }
-                std.debug.print(" |\n", .{});
-            }
-
-            // TODO: handle weird control chars properly
-            const line = p.line(info.off);
-            std.debug.print("{} | {s}\n", .{ line_pos.line, line });
-
-            {
-                var n = line_pos.line;
-                while (n > 0) : (n /= 10) {
-                    std.debug.print(" ", .{});
-                }
-                std.debug.print(" | ", .{});
-            }
-
-            // TODO: handle weird control chars properly
-            for (line[0 .. line_pos.col - 1]) |c| {
-                const ws: u8 = switch (c) {
-                    '\t' => '\t',
-                    else => ' ',
-                };
-                std.debug.print("{c}", .{ws});
-            }
-            std.debug.print("^\n", .{});
-
-            const use_ansi = std.io.getStdErr().supportsAnsiEscapeCodes();
-            const error_kw = if (use_ansi) "\x1b[1;31merror\x1b[0m" else "error";
-            std.debug.print("{s}: {}\n\n", .{ error_kw, info.err });
+            const stderr = std.io.getStdErr();
+            p.printError(stderr.writer(), .{
+                .color = stderr.supportsAnsiEscapeCodes(),
+            }) catch {};
         }
         return err;
     }
@@ -119,6 +84,68 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
             }
             return error.InvalidParse;
         }
+
+        pub fn printError(self: *Self, w: anytype, opts: PrintErrorOpts) !void {
+            try self.printErrorMessage(w, "{}", .{self.err.?.err}, opts);
+        }
+
+        pub fn printErrorMessage(
+            self: *Self,
+            w: anytype,
+            comptime fmt: []const u8,
+            args: anytype,
+            opts: PrintErrorOpts,
+        ) !void {
+            const err = self.err.?;
+            const line_pos = self.linePos(err.off);
+
+            if (opts.filename) |fname| {
+                try w.print("{s}:", .{fname});
+            }
+            try w.print("{}:\n", .{line_pos});
+
+            {
+                var n = line_pos.line;
+                while (n > 0) : (n /= 10) {
+                    try w.print(" ", .{});
+                }
+                try w.print(" |\n", .{});
+            }
+
+            // TODO: handle weird control chars properly
+            const err_line = self.line(err.off);
+            try w.print("{} | {s}\n", .{ line_pos.line, err_line });
+
+            {
+                var n = line_pos.line;
+                while (n > 0) : (n /= 10) {
+                    try w.print(" ", .{});
+                }
+                try w.print(" | ", .{});
+            }
+
+            // TODO: handle weird control chars properly
+            for (err_line[0 .. line_pos.col - 1]) |c| {
+                const ws: u8 = switch (c) {
+                    '\t' => '\t',
+                    else => ' ',
+                };
+                try w.print("{c}", .{ws});
+            }
+            try w.print("^\n", .{});
+
+            if (opts.color) {
+                try w.print("\x1b[1;31merror\x1b[0m: ", .{});
+            } else {
+                try w.print("error: ", .{});
+            }
+            try w.print(fmt ++ "\n\n", args);
+        }
+
+        pub const PrintErrorOpts = struct {
+            filename: ?[]const u8 = null,
+            color: bool = false,
+        };
 
         pub fn line(self: Self, off: usize) []const u8 {
             var start = off;
