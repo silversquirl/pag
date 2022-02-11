@@ -245,16 +245,23 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
 
                 var n: usize = 0;
                 inline for (prod.syms) |sym, i| {
-                    if (@TypeOf(args[i + 1]) != SymbolResult(sym)) {
+                    const fty = @TypeOf(args[i + 1]);
+                    const sty = SymbolResult(sym);
+                    var res: sty = undefined;
+                    n += try self.parseSym(sym, off + n, &res);
+
+                    if (fty == sty) {
+                        args[i + 1] = res;
+                    } else if (fty == u8 and sym == .str and sym.str.len == 1) {
+                        // Special case for single char strings
+                        args[i + 1] = res[0];
+                    } else {
                         // Specially handle this type error for better readability
-                        const expected = @typeName(@TypeOf(args[i + 1]));
-                        const found = @typeName(SymbolResult(sym));
                         @compileError(comptime std.fmt.comptimePrint(
                             "expected {} to have type {s}, found {s}",
-                            .{ sym, expected, found },
+                            .{ sym, @typeName(fty), @typeName(sty) },
                         ));
                     }
-                    n += try self.parseSym(sym, off + n, &args[i + 1]);
                 }
 
                 const ret = @call(.{}, h.match, args);
