@@ -89,7 +89,12 @@ pub fn generate(writer: anytype, file: File) !void {
                     try writer.print("{s}: {s},\n", .{ arg_name, ty });
                 }
 
-                try writer.print(") !{s} {{{s}}}\n}}", .{ rule.type, func.code });
+                try writer.print(") !{s} {{", .{rule.type});
+                if (!std.mem.eql(u8, file.context.name, "_")) {
+                    try writer.print(" _ = {s};", .{file.context.name});
+                }
+                try writer.print("{s}}}\n", .{func.code});
+                try writer.writeAll("}");
             }
 
             try writer.writeAll(" },\n");
