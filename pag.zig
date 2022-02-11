@@ -15,11 +15,14 @@ pub fn parse(
     if (p.parse(start)) |result| {
         return result;
     } else |err| {
+        const stderr = std.io.getStdErr();
+        const opts = PrintErrorOpts{
+            .color = stderr.supportsAnsiEscapeCodes(),
+        };
         if (err == error.InvalidParse) {
-            const stderr = std.io.getStdErr();
-            p.printError(stderr.writer(), .{
-                .color = stderr.supportsAnsiEscapeCodes(),
-            }) catch {};
+            p.printError(stderr.writer(), opts) catch {};
+        } else {
+            p.printErrorMessage(stderr.writer(), "{s}", .{@errorName(err)}, opts) catch {};
         }
         return err;
     }
@@ -38,7 +41,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
 
         const RuleName = std.meta.DeclEnum(rules);
         const RuleSet = std.enums.EnumSet(RuleName);
-        const BaseError = error{ InvalidParse, OutOfMemory };
+        const BaseError = error{InvalidParse};
         const Self = @This();
 
         pub fn deinit(self: Self) void {
@@ -55,7 +58,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                     expected_list.clearRetainingCapacity();
                 }
 
-                try expected_list.appendSlice(expected);
+                expected_list.appendSlice(expected) catch {};
                 self.err = ErrorInfo{
                     .off = off,
                     .err = .{
@@ -78,10 +81,11 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                         }
                     } else true;
                     if (add) {
-                        try list.append(exp);
+                        list.append(exp) catch continue;
                     }
                 }
             }
+
             return error.InvalidParse;
         }
 
@@ -158,11 +162,6 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
             }
             try w.print(fmt ++ "\n\n", args);
         }
-
-        pub const PrintErrorOpts = struct {
-            filename: ?[]const u8 = null,
-            color: bool = false,
-        };
 
         pub fn line(self: Self, off: usize) []const u8 {
             var start = off;
@@ -405,6 +404,11 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
         }
     };
 }
+
+pub const PrintErrorOpts = struct {
+    filename: ?[]const u8 = null,
+    color: bool = false,
+};
 
 pub const LinePos = struct {
     line: usize,
