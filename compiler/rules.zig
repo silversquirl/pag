@@ -173,11 +173,11 @@ pub const @"zig-code": pag.Rule = &.{
     }, .handler = struct {
         pub fn match(
             allocator: std.mem.Allocator,
-            ch: u8,
+            ch: u21,
             rest: std.ArrayListUnmanaged(u8),
         ) !std.ArrayListUnmanaged(u8) {
             _ = allocator;
-            return ArrayBuilder(u8).build(allocator, ch, rest);
+            return ArrayBuilder(u8).build(allocator, @intCast(u8, ch), rest);
         }
     } },
     .{ .syms = &.{
@@ -230,12 +230,12 @@ pub const @"zig-string": pag.Rule = &.{
     }, .handler = struct {
         pub fn match(
             allocator: std.mem.Allocator,
-            l: u8,
+            _: u21,
             str: std.ArrayListUnmanaged(u8),
-            r: u8,
+            _: u21,
         ) ![]const u8 {
             _ = allocator;
-            return ArrayBuilder(u8).finishDelim(allocator, l, str, r);
+            return ArrayBuilder(u8).finishDelim(allocator, '"', str, '"');
         }
     } },
     .{ .syms = &.{
@@ -245,12 +245,12 @@ pub const @"zig-string": pag.Rule = &.{
     }, .handler = struct {
         pub fn match(
             allocator: std.mem.Allocator,
-            l: u8,
+            _: u21,
             str: std.ArrayListUnmanaged(u8),
-            r: u8,
+            _: u21,
         ) ![]const u8 {
             _ = allocator;
-            return ArrayBuilder(u8).finishDelim(allocator, l, str, r);
+            return ArrayBuilder(u8).finishDelim(allocator, '\'', str, '\'');
         }
     } },
 };
@@ -266,11 +266,11 @@ pub const @"zig-ds-chars": pag.Rule = &.{
     }, .handler = struct {
         pub fn match(
             allocator: std.mem.Allocator,
-            ch: u8,
+            ch: u21,
             rest: std.ArrayListUnmanaged(u8),
         ) !std.ArrayListUnmanaged(u8) {
             _ = allocator;
-            return ArrayBuilder(u8).build(allocator, ch, rest);
+            return ArrayBuilder(u8).build(allocator, @intCast(u8, ch), rest);
         }
     } },
     .{ .syms = &.{
@@ -283,12 +283,12 @@ pub const @"zig-ds-chars": pag.Rule = &.{
         pub fn match(
             allocator: std.mem.Allocator,
             _: []const u8,
-            ch: u8,
+            ch: u21,
             rest: std.ArrayListUnmanaged(u8),
         ) !std.ArrayListUnmanaged(u8) {
             _ = allocator;
             var array = rest;
-            try array.append(allocator, ch);
+            try array.append(allocator, @intCast(u8, ch));
             try array.append(allocator, '\\');
             return array;
         }
@@ -314,11 +314,11 @@ pub const @"zig-ss-chars": pag.Rule = &.{
     }, .handler = struct {
         pub fn match(
             allocator: std.mem.Allocator,
-            ch: u8,
+            ch: u21,
             rest: std.ArrayListUnmanaged(u8),
         ) !std.ArrayListUnmanaged(u8) {
             _ = allocator;
-            return ArrayBuilder(u8).build(allocator, ch, rest);
+            return ArrayBuilder(u8).build(allocator, @intCast(u8, ch), rest);
         }
     } },
     .{ .syms = &.{
@@ -331,12 +331,12 @@ pub const @"zig-ss-chars": pag.Rule = &.{
         pub fn match(
             allocator: std.mem.Allocator,
             _: []const u8,
-            ch: u8,
+            ch: u21,
             rest: std.ArrayListUnmanaged(u8),
         ) !std.ArrayListUnmanaged(u8) {
             _ = allocator;
             var array = rest;
-            try array.append(allocator, ch);
+            try array.append(allocator, @intCast(u8, ch));
             try array.append(allocator, '\\');
             return array;
         }
@@ -622,7 +622,7 @@ pub const @"zig-ident-rest": pag.Rule = &.{
             rest: std.ArrayListUnmanaged(u8),
         ) !std.ArrayListUnmanaged(u8) {
             _ = allocator;
-            return ArrayBuilder(u8).build(allocator, ch, rest);
+            return ArrayBuilder(u8).build(allocator, @intCast(u8, ch), rest);
         }
     } },
     .{ .syms = &.{}, .handler = struct {
@@ -645,10 +645,10 @@ pub const @"zig-ident-first-char": pag.Rule = &.{
     }, .handler = struct {
         pub fn match(
             allocator: std.mem.Allocator,
-            ch: u8,
+            ch: u21,
         ) !u8 {
             _ = allocator;
-            return ch;
+            return @intCast(u8, ch);
         }
     } },
 };
@@ -664,10 +664,10 @@ pub const @"zig-ident-char": pag.Rule = &.{
     }, .handler = struct {
         pub fn match(
             allocator: std.mem.Allocator,
-            ch: u8,
+            ch: u21,
         ) !u8 {
             _ = allocator;
-            return ch;
+            return @intCast(u8, ch);
         }
     } },
 };
@@ -767,10 +767,10 @@ pub const @"ident-char": pag.Rule = &.{
     }, .handler = struct {
         pub fn match(
             allocator: std.mem.Allocator,
-            ch: u8,
+            ch: u21,
         ) !u8 {
             _ = allocator;
-            return ch;
+            return @intCast(u8, ch);
         }
     } },
 };
@@ -783,9 +783,9 @@ pub const string: pag.Rule = &.{
     }, .handler = struct {
         pub fn match(
             allocator: std.mem.Allocator,
-            _: u8,
+            _: u21,
             str: std.ArrayListUnmanaged(u8),
-            _: u8,
+            _: u21,
         ) ![]const u8 {
             _ = allocator;
             return ArrayBuilder(u8).finish(allocator, str);
@@ -827,10 +827,10 @@ pub const @"string-char": pag.Rule = &.{
     }, .handler = struct {
         pub fn match(
             allocator: std.mem.Allocator,
-            ch: u8,
+            ch: u21,
         ) !u8 {
             _ = allocator;
-            return ch;
+            return @intCast(u8, ch);
         }
     } },
     .{ .syms = &.{
@@ -843,7 +843,7 @@ pub const @"string-char": pag.Rule = &.{
             ch: u8,
         ) !u8 {
             _ = allocator;
-            return ch;
+            return @intCast(u8, ch);
         }
     } },
 };
@@ -857,10 +857,10 @@ pub const @"string-char-escaped": pag.Rule = &.{
     }, .handler = struct {
         pub fn match(
             allocator: std.mem.Allocator,
-            ch: u8,
+            ch: u21,
         ) !u8 {
             _ = allocator;
-            return ch;
+            return @intCast(u8, ch);
         }
     } },
     .{ .syms = &.{
@@ -995,10 +995,10 @@ pub const @"set-char": pag.Rule = &.{
     }, .handler = struct {
         pub fn match(
             allocator: std.mem.Allocator,
-            ch: u8,
+            ch: u21,
         ) !u8 {
             _ = allocator;
-            return ch;
+            return @intCast(u8, ch);
         }
     } },
     .{ .syms = &.{
@@ -1011,7 +1011,7 @@ pub const @"set-char": pag.Rule = &.{
             ch: u8,
         ) !u8 {
             _ = allocator;
-            return ch;
+            return @intCast(u8, ch);
         }
     } },
 };
@@ -1019,6 +1019,8 @@ pub const @"set-char": pag.Rule = &.{
 pub const @"set-char-escaped": pag.Rule = &.{
     .{ .syms = &.{
         .{ .set = &pag.SetBuilder.init()
+            .add("-")
+            .add("^")
             .add("[")
             .add("]")
             .add("\\")
@@ -1026,10 +1028,10 @@ pub const @"set-char-escaped": pag.Rule = &.{
     }, .handler = struct {
         pub fn match(
             allocator: std.mem.Allocator,
-            ch: u8,
+            ch: u21,
         ) !u8 {
             _ = allocator;
-            return ch;
+            return @intCast(u8, ch);
         }
     } },
     .{ .syms = &.{
@@ -1092,7 +1094,7 @@ pub const hexdig: pag.Rule = &.{
     }, .handler = struct {
         pub fn match(
             allocator: std.mem.Allocator,
-            ch: u8,
+            ch: u21,
         ) !u4 {
             _ = allocator;
             return @intCast(u4, ch - '0');
@@ -1105,7 +1107,7 @@ pub const hexdig: pag.Rule = &.{
     }, .handler = struct {
         pub fn match(
             allocator: std.mem.Allocator,
-            ch: u8,
+            ch: u21,
         ) !u4 {
             _ = allocator;
             return @intCast(u4, ch - 'a' + 10);
@@ -1118,7 +1120,7 @@ pub const hexdig: pag.Rule = &.{
     }, .handler = struct {
         pub fn match(
             allocator: std.mem.Allocator,
-            ch: u8,
+            ch: u21,
         ) !u4 {
             _ = allocator;
             return @intCast(u4, ch - 'A' + 10);

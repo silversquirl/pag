@@ -63,7 +63,7 @@ pragma: {ast.Pragma} = "#context" ws zig-ident ws? ":" ws? zig-type ws? ";"
 
 block: {[]const u8} = "{" zig-code "}" @(_, code, _) { return ArrayBuilder(u8).finish(allocator, code); };
 zig-code: {std.ArrayListUnmanaged(u8)}
-    = [^"{}] zig-code @(ch, rest) { return ArrayBuilder(u8).build(allocator, ch, rest); }
+    = [^"{}] zig-code @(ch, rest) { return ArrayBuilder(u8).build(allocator, @intCast(u8, ch), rest); }
     | zig-string zig-code @(str, rest) { return ArrayBuilder(u8).extend(allocator, str, rest); }
     | block zig-code @(b, rest) {
         var array = rest;
@@ -76,22 +76,22 @@ zig-code: {std.ArrayListUnmanaged(u8)}
     }
     | @() { return ArrayBuilder(u8).empty(); };
 zig-string: {[]const u8}
-    = ["] zig-ds-chars ["] @(l, str, r) { return ArrayBuilder(u8).finishDelim(allocator, l, str, r); }
-    | ['] zig-ss-chars ['] @(l, str, r) { return ArrayBuilder(u8).finishDelim(allocator, l, str, r); };
+    = ["] zig-ds-chars ["] @(_, str, _) { return ArrayBuilder(u8).finishDelim(allocator, '"', str, '"'); }
+    | ['] zig-ss-chars ['] @(_, str, _) { return ArrayBuilder(u8).finishDelim(allocator, '\'', str, '\''); };
 zig-ds-chars: {std.ArrayListUnmanaged(u8)}
-    = [^\\"] zig-ds-chars @(ch, rest) { return ArrayBuilder(u8).build(allocator, ch, rest); }
+    = [^\\"] zig-ds-chars @(ch, rest) { return ArrayBuilder(u8).build(allocator, @intCast(u8, ch), rest); }
     | "\\" [\x00-\xff] zig-ss-chars @(_, ch, rest) {
         var array = rest;
-        try array.append(allocator, ch);
+        try array.append(allocator, @intCast(u8, ch));
         try array.append(allocator, '\\');
         return array;
     }
     | @() { return ArrayBuilder(u8).empty(); };
 zig-ss-chars: {std.ArrayListUnmanaged(u8)}
-    = [^\\'] zig-ss-chars @(ch, rest) { return ArrayBuilder(u8).build(allocator, ch, rest); }
+    = [^\\'] zig-ss-chars @(ch, rest) { return ArrayBuilder(u8).build(allocator, @intCast(u8, ch), rest); }
     | "\\" [\x00-\xff] zig-ss-chars @(_, ch, rest) {
         var array = rest;
-        try array.append(allocator, ch);
+        try array.append(allocator, @intCast(u8, ch));
         try array.append(allocator, '\\');
         return array;
     }
@@ -148,10 +148,10 @@ zig-ident: {[]const u8}
         return ArrayBuilder(u8).finish(allocator, id);
     };
 zig-ident-rest: {std.ArrayListUnmanaged(u8)}
-    = zig-ident-char zig-ident-rest @(ch, rest) { return ArrayBuilder(u8).build(allocator, ch, rest); }
+    = zig-ident-char zig-ident-rest @(ch, rest) { return ArrayBuilder(u8).build(allocator, @intCast(u8, ch), rest); }
     | @() { return ArrayBuilder(u8).empty(); };
-zig-ident-first-char: {u8} = [a-zA-Z_] @(ch) { return ch; };
-zig-ident-char: {u8} = [a-zA-Z0-9_] @(ch) { return ch; };
+zig-ident-first-char: {u8} = [a-zA-Z_] @(ch) { return @intCast(u8, ch); };
+zig-ident-char: {u8} = [a-zA-Z0-9_] @(ch) { return @intCast(u8, ch); };
 
 type-annotation?: {?[]const u8}
     = ":" ws? zig-type @(_, _, ty) { return ty; }
@@ -162,17 +162,17 @@ ident: {[]const u8} = ident-internal @(id) { return ArrayBuilder(u8).finish(allo
 ident-internal: {std.ArrayListUnmanaged(u8)}
     = ident-char ident-internal @(ch, rest) { return ArrayBuilder(u8).build(allocator, ch, rest); }
     | ident-char @(ch) { return ArrayBuilder(u8).one(allocator, ch); };
-ident-char: {u8} = [a-zA-Z0-9?!_-] @(ch) { return ch; };
+ident-char: {u8} = [a-zA-Z0-9?!_-] @(ch) { return @intCast(u8, ch); };
 
 string: {[]const u8} = ["] string-chars ["] @(_, str, _) { return ArrayBuilder(u8).finish(allocator, str); };
 string-chars: {std.ArrayListUnmanaged(u8)}
     = string-char string-chars @(ch, rest) { return ArrayBuilder(u8).build(allocator, ch, rest); }
     | @() { return ArrayBuilder(u8).empty(); };
-string-char: {u8}
-    = [^\\"] @(ch) { return ch; }
-    | "\\" string-char-escaped @(_, ch) { return ch; };
-string-char-escaped: {u8}
-    = [\\"] @(ch) { return ch; }
+string-char: {u8} // TODO: unicode
+    = [^\\"] @(ch) { return @intCast(u8, ch); }
+    | "\\" string-char-escaped @(_, ch) { return @intCast(u8, ch); };
+string-char-escaped: {u8} // TODO: unicode
+    = [\\"] @(ch) { return @intCast(u8, ch); }
     | "x" hexdig hexdig @(_, h, l) { return (@as(u8, h) << 4) | l; };
 
 set: {ast.Set} = "[" set-invert? set-entries "]" @(_, invert, entries, _) {
@@ -195,11 +195,11 @@ set-entry: {ast.Set.Entry}
         } };
     }
     | set-char @(ch) { return ast.Set.Entry{ .ch = ch }; };
-set-char: {u8}
-    = [^\[\]\\] @(ch) { return ch; }
-    | "\\" set-char-escaped @(_, ch) { return ch; };
+set-char: {u8} // TODO: unicode
+    = [^\[\]\\] @(ch) { return @intCast(u8, ch); }
+    | "\\" set-char-escaped @(_, ch) { return @intCast(u8, ch); };
 set-char-escaped: {u8}
-    = [\[\]\\] @(ch) { return ch; }
+    = [-^\[\]\\] @(ch) { return @intCast(u8, ch); }
     | "x" hexdig hexdig @(_, h, l) { return (@as(u8, h) << 4) | l; };
 
 ws? = ws | ;

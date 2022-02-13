@@ -41,7 +41,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
 
         const RuleName = std.meta.DeclEnum(rules);
         const RuleSet = std.enums.EnumSet(RuleName);
-        const BaseError = error{InvalidParse};
+        const BaseError = error{ InvalidParse, InvalidUtf8 };
         const Self = @This();
 
         pub fn deinit(self: Self) void {
@@ -252,9 +252,9 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
 
                     if (fty == sty) {
                         args[i + 1] = res;
-                    } else if (fty == u8 and sym == .str and sym.str.len == 1) {
+                    } else if (fty == u21 and sym == .str and (comptime try std.unicode.utf8CountCodepoints(sym.str)) == 1) {
                         // Special case for single char strings
-                        args[i + 1] = res[0];
+                        args[i + 1] = comptime std.unicode.utf8Decode(sym.str) catch @compileError("invalid utf-8");
                     } else {
                         // Specially handle this type error for better readability
                         @compileError(comptime std.fmt.comptimePrint(
@@ -311,11 +311,30 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                     };
                     return self.e(&.{err_expected}, off);
                 },
-                .set => |set| if (off < self.text.len and set.isSet(self.text[off])) {
-                    result.* = self.text[off];
-                    return 1;
-                } else {
-                    return self.e(&.{"<character set>"}, off); // TODO
+                .set => |set| {
+                    if (off >= self.text.len) {
+                        return self.e(&.{comptime set.humanString()}, off); // TODO
+                    }
+
+                    const rune_len = std.unicode.utf8ByteSequenceLength(self.text[off]) catch {
+                        self.callbackError(off);
+                        return error.InvalidUtf8;
+                    };
+                    if (off + rune_len > self.text.len) {
+                        return self.e(&.{"utf-8 bytes"}, off);
+                    }
+
+                    const rune_bytes = self.text[off .. off + rune_len];
+                    const rune = std.unicode.utf8Decode(rune_bytes) catch {
+                        return self.e(&.{"utf-8 bytes"}, off);
+                    };
+
+                    if (off < self.text.len and set.contains(rune)) {
+                        result.* = rune;
+                        return rune_len;
+                    } else {
+                        return self.e(&.{comptime set.humanString()}, off); // TODO
+                    }
                 },
                 .nt => |rule| return self.parseRule(rule, off, result),
             }
@@ -405,7 +424,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
             return switch (sym) {
                 .end => void,
                 .str => []const u8,
-                .set => u8,
+                .set => u21,
                 .nt => |rule| RuleResult(rule),
             };
         }
@@ -463,40 +482,92 @@ pub const Symbol = union(enum) {
     set: *const Set,
     nt: @Type(.EnumLiteral),
 };
-pub const Set = std.StaticBitSet(256);
+pub const Set = struct {
+    invert: bool,
+    entries: []const Range,
+    pub const Range = struct {
+        start: u21,
+        end: u21,
+    };
+
+    // FIXME: this is O(n); use a segment tree
+    pub fn contains(comptime self: Set, rune: u21) bool {
+        for (self.entries) |range| {
+            if (range.start <= rune and range.end >= rune) {
+                return !self.invert;
+            }
+        }
+        return self.invert;
+    }
+
+    pub fn humanString(comptime self: Set) []const u8 {
+        var str: []const u8 = "[";
+        for (self.entries) |range| {
+            if (range.start == range.end) {
+                str = str ++ escapeRune(range.start);
+            } else {
+                str = str ++ escapeRune(range.start) ++ "-" ++ escapeRune(range.end);
+            }
+        }
+        return str ++ "]";
+    }
+
+    fn escapeRune(comptime rune: u21) []const u8 {
+        const prefix = switch (rune) {
+            '-', '^', '\\', '[', ']' => "\\",
+            else => "",
+        };
+        return std.fmt.comptimePrint("{s}{u}", .{ prefix, rune });
+    }
+};
 pub const SetBuilder = struct {
-    set: Set = Set.initEmpty(),
+    set: Set = .{
+        .invert = false,
+        .entries = &.{},
+    },
 
     pub fn init() SetBuilder {
         return .{};
     }
 
-    pub fn add(comptime self_const: SetBuilder, comptime chars: []const u8) SetBuilder {
-        @setEvalBranchQuota(8 * chars.len);
+    // TODO: merge adjacent ranges
 
+    pub fn add(comptime self_const: SetBuilder, comptime str: []const u8) SetBuilder {
         var self = self_const;
-        for (chars) |ch| {
-            self.set.set(ch);
+
+        const len = std.unicode.utf8CountCodepoints(str) catch @compileError("invalid utf-8");
+        var new: [len]Set.Range = undefined;
+        var i = 0;
+
+        var it = std.unicode.Utf8View.initUnchecked(str).iterator();
+        while (it.nextCodepoint()) |rune| : (i += 1) {
+            new[i] = .{ .start = rune, .end = rune };
         }
+        std.debug.assert(i == len);
+
+        self.set.entries = self.set.entries ++ new;
         return self;
     }
 
-    pub fn addRange(comptime self_const: SetBuilder, comptime start: u8, comptime end: u8) SetBuilder {
-        @setEvalBranchQuota(8 * (@as(u32, end - start) + 1));
+    pub fn addRune(comptime self_const: SetBuilder, comptime rune: u21) SetBuilder {
+        return self_const.addRange(rune, rune);
+    }
 
+    pub fn addRange(comptime self_const: SetBuilder, comptime start: u21, comptime end: u21) SetBuilder {
         var self = self_const;
-        var ch = start;
-        while (true) {
-            self.set.set(ch);
-            if (ch == end) break;
-            ch += 1;
-        }
+        self.set.entries = self.set.entries ++ [_]Set.Range{.{
+            .start = start,
+            .end = end,
+        }};
         return self;
     }
 
     pub fn invert(comptime self_const: SetBuilder) SetBuilder {
         var self = self_const;
-        self.set.toggleAll();
+        if (self.set.invert) {
+            @compileError("set inverted twice");
+        }
+        self.set.invert = true;
         return self;
     }
 };

@@ -74,7 +74,7 @@ pub fn generate(writer: anytype, file: File) !void {
                     const ty = switch (prod.syms[i]) {
                         .end => "void",
                         .str => "[]const u8",
-                        .set => "u8",
+                        .set => "u21",
 
                         // TODO: make this not O(n^2)
                         .nt => |name| for (file.rules) |rule2| {

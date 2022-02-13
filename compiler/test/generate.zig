@@ -70,7 +70,7 @@ test "generate hex number" {
         \\}, .handler = struct {
         \\pub fn match(
         \\_: void,
-        \\ch: u8,
+        \\ch: u21,
         \\) !u4 {
         \\  return std.fmt.parseInt(u4, &.{ch}, 16);
         \\}
