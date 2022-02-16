@@ -32,12 +32,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
     return struct {
         context: Context,
         text: []const u8,
-        err: ?ErrorInfo = null,
-
-        pub const ErrorInfo = struct {
-            off: usize,
-            err: ParseError,
-        };
+        err: ?ParseError = null,
 
         const RuleName = std.meta.DeclEnum(rules);
         const RuleSet = std.enums.EnumSet(RuleName);
@@ -46,33 +41,43 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
 
         pub fn deinit(self: Self) void {
             if (self.err) |err| {
-                err.err.expected.deinit();
+                err.expected.deinit();
             }
         }
 
-        fn e(self: *Self, comptime expected: []const []const u8, off: usize) BaseError {
-            if (self.err == null or off > self.err.?.off) {
+        fn e(
+            self: *Self,
+            error_mode: ErrorMode,
+            comptime normal_expected: []const []const u8,
+            normal_off: usize,
+        ) BaseError {
+            var off = normal_off;
+            var expected = normal_expected;
+            switch (error_mode) {
+                .none => return error.InvalidParse,
+                .normal => {},
+                .token => |tok| {
+                    off = tok.off;
+                    expected = &.{tok.name};
+                },
+            }
+
+            if (self.err == null or off > self.err.?.found.off) {
                 var expected_list = std.ArrayList([]const u8).init(std.heap.page_allocator);
                 if (self.err) |err| {
-                    expected_list = err.err.expected;
+                    expected_list = err.expected;
                     expected_list.clearRetainingCapacity();
                 }
 
                 expected_list.appendSlice(expected) catch {};
-                self.err = ErrorInfo{
-                    .off = off,
-                    .err = .{
-                        .expected = expected_list,
-                        .found = if (off < self.text.len)
-                            "" // TODO: get found token
-                        else
-                            "eof",
-                    },
+                self.err = ParseError{
+                    .expected = expected_list,
+                    .found = self.nextToken(off),
                 };
-            } else if (off < self.err.?.off) {
+            } else if (off < self.err.?.found.off) {
                 // Do nothing; we don't want to backtrack errors
             } else {
-                const list = &self.err.?.err.expected;
+                const list = &self.err.?.expected;
                 // O(n^2) but meh it's probably not a big deal
                 for (expected) |exp| {
                     const add = for (list.items) |exist| {
@@ -89,25 +94,92 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
             return error.InvalidParse;
         }
 
+        const ErrorMode = union(enum) {
+            none,
+            normal,
+            token: struct {
+                off: usize,
+                name: []const u8,
+            },
+        };
+
+        fn nextToken(self: *Self, off: usize) ParseError.Token {
+            if (off >= self.text.len) return .{
+                .off = off,
+                .len = 0,
+                .name = "eof",
+            };
+
+            // Match literal strings
+            inline for (comptime std.meta.declarations(rules)) |decl| {
+                if (!decl.is_pub) continue;
+                const rule = @field(rules, decl.name);
+                inline for (rule.prods) |prod| {
+                    inline for (prod.syms) |sym| {
+                        if (sym != .str) continue;
+                        var res: SymbolResult(sym) = undefined;
+
+                        if (self.parseSym(sym, .none, off, &res)) |len| {
+                            return .{
+                                .off = off,
+                                .len = len,
+                                .name = comptime std.fmt.comptimePrint("\"{}\"", .{
+                                    std.zig.fmtEscapes(sym.str),
+                                }),
+                            };
+                        } else |_| {}
+                    }
+                }
+            }
+
+            // Match token rules
+            inline for (comptime std.meta.declarations(rules)) |decl| {
+                if (!decl.is_pub) continue;
+                const rule = @field(rules, decl.name);
+                if (rule.kind != .token) continue;
+
+                const rule_name = @field(RuleName, decl.name);
+                var res: RuleResult(rule_name) = undefined;
+
+                if (self.parseRuleInternal(rule_name, .none, off, &res)) |len| {
+                    return .{
+                        .off = off,
+                        .len = len,
+                        .name = @tagName(rule_name),
+                    };
+                } else |_| {}
+            }
+
+            return .{
+                .off = off,
+                .len = 0,
+                .name = "",
+            };
+        }
+
         // TODO: offset range
         fn callbackError(self: *Self, off: usize) void {
             if (self.err) |*err| {
-                err.err.expected.clearAndFree();
-                err.err.found = "";
-                err.off = off;
-            } else {
-                self.err = ErrorInfo{
+                err.expected.clearAndFree();
+                err.found = .{
                     .off = off,
-                    .err = .{
-                        .expected = std.ArrayList([]const u8).init(std.heap.page_allocator),
-                        .found = "",
+                    .len = 0,
+                    .name = "",
+                };
+            } else {
+                self.err = ParseError{
+                    .expected = std.ArrayList([]const u8).init(std.heap.page_allocator),
+                    .found = .{
+                        .off = off,
+                        .len = 0,
+                        .name = "",
                     },
                 };
             }
         }
 
         pub fn printError(self: *Self, w: anytype, opts: PrintErrorOpts) !void {
-            try self.printErrorMessage(w, "{}", .{self.err.?.err}, opts);
+            try self.printErrorMessage(w, "{}", .{self.err.?}, opts);
         }
 
         pub fn printErrorMessage(
@@ -118,7 +190,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
             opts: PrintErrorOpts,
         ) !void {
             const err = self.err.?;
-            const line_pos = self.linePos(err.off);
+            const line_pos = self.linePos(err.found.off);
 
             if (opts.filename) |fname| {
                 try w.print("{s}:", .{fname});
@@ -128,21 +200,21 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
             {
                 var n = line_pos.line;
                 while (n > 0) : (n /= 10) {
-                    try w.print(" ", .{});
+                    try w.writeByte(' ');
                 }
-                try w.print(" |\n", .{});
+                try w.writeAll(" |\n");
             }
 
             // TODO: handle weird control chars properly
-            const err_line = self.line(err.off);
+            const err_line = self.line(err.found.off);
             try w.print("{} | {s}\n", .{ line_pos.line, err_line });
 
             {
                 var n = line_pos.line;
                 while (n > 0) : (n /= 10) {
-                    try w.print(" ", .{});
+                    try w.writeByte(' ');
                 }
-                try w.print(" | ", .{});
+                try w.writeAll(" | ");
             }
 
             // TODO: handle weird control chars properly
@@ -153,12 +225,18 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                 };
                 try w.print("{c}", .{ws});
             }
-            try w.print("^\n", .{});
+            {
+                var i: usize = 0;
+                while (i <= err.found.len -| 1) : (i += 1) {
+                    try w.writeByte('^');
+                }
+                try w.writeByte('\n');
+            }
 
             if (opts.color) {
-                try w.print("\x1b[1;31merror\x1b[0m: ", .{});
+                try w.writeAll("\x1b[1;31merror\x1b[0m: ");
             } else {
-                try w.print("error: ", .{});
+                try w.writeAll("error: ");
             }
             try w.print(fmt ++ "\n\n", args);
         }
@@ -202,7 +280,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
             var result: RuleResult(start) = undefined;
             const n = try self.parseRule(start, 0, &result);
             if (n != self.text.len) {
-                return self.e(&.{"eof"}, n);
+                return self.e(.normal, &.{"eof"}, n);
             }
             return result;
         }
@@ -213,14 +291,30 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
             off: usize,
             result: *RuleResult(rule_name),
         ) RuleError(rule_name)!usize {
+            return self.parseRuleInternal(rule_name, .normal, off, result);
+        }
+
+        fn parseRuleInternal(
+            self: *Self,
+            comptime rule_name: RuleName,
+            error_mode_in: ErrorMode,
+            off: usize,
+            result: *RuleResult(rule_name),
+        ) !usize {
             const rule = @field(rules, @tagName(rule_name));
-            const token_name: ?[]const u8 = switch (rule.kind) {
-                .nonterminal => null,
-                .token => @tagName(rule_name),
+            const error_mode: ErrorMode = switch (error_mode_in) {
+                .none, .token => error_mode_in,
+                .normal => switch (rule.kind) {
+                    .nonterminal => .normal,
+                    .token => .{ .token = .{
+                        .off = off,
+                        .name = @tagName(rule_name),
+                    } },
+                },
             };
 
             inline for (rule.prods) |prod| {
-                if (self.parseProd(prod, token_name, off, result)) |n| {
+                if (self.parseProd(prod, error_mode, off, result)) |n| {
                     return n;
                 } else |err| switch (err) {
                     error.InvalidParse => {},
@@ -234,7 +328,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
         fn parseProd(
             self: *Self,
             comptime prod: Production,
-            comptime token_name: ?[]const u8,
+            error_mode: ErrorMode,
             off: usize,
             result: *ProdResult(prod),
         ) ProdError(prod)!usize {
@@ -254,7 +348,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                     const fty = @TypeOf(args[i + 1]);
                     const sty = SymbolResult(sym);
                     var res: sty = undefined;
-                    n += try self.parseSym(sym, token_name, off + n, &res);
+                    n += try self.parseSym(sym, error_mode, off + n, &res);
 
                     if (fty == sty) {
                         args[i + 1] = res;
@@ -285,7 +379,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                 var n: usize = 0;
                 inline for (prod.syms) |sym| {
                     var res: SymbolResult(sym) = undefined;
-                    n += try self.parseSym(sym, token_name, off + n, &res);
+                    n += try self.parseSym(sym, error_mode, off + n, &res);
                 }
                 return n;
             }
@@ -294,7 +388,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
         fn parseSym(
             self: *Self,
             comptime sym: Symbol,
-            comptime token_name: ?[]const u8,
+            error_mode: ErrorMode,
             off: usize,
             result: *SymbolResult(sym),
         ) !usize {
@@ -302,7 +396,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                 .end => if (off >= self.text.len) {
                     return 0;
                 } else {
-                    return self.e(&.{token_name orelse "eof"}, off);
+                    return self.e(error_mode, &.{"eof"}, off);
                 },
                 .str => |expected| if (std.mem.startsWith(u8, self.text[off..], expected)) {
                     result.* = self.text[off .. off + expected.len];
@@ -316,11 +410,11 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                             std.zig.fmtEscapes(expected),
                         });
                     };
-                    return self.e(&.{token_name orelse err_expected}, off);
+                    return self.e(error_mode, &.{err_expected}, off);
                 },
                 .set => |set| {
                     if (off >= self.text.len) {
-                        return self.e(&.{token_name orelse comptime set.humanString()}, off); // TODO
+                        return self.e(error_mode, &.{comptime set.humanString()}, off); // TODO
                     }
 
                     const rune_len = std.unicode.utf8ByteSequenceLength(self.text[off]) catch {
@@ -328,22 +422,22 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                         return error.InvalidUtf8;
                     };
                     if (off + rune_len > self.text.len) {
-                        return self.e(&.{token_name orelse "utf-8 bytes"}, off);
+                        return self.e(error_mode, &.{"utf-8 bytes"}, off);
                     }
 
                     const rune_bytes = self.text[off .. off + rune_len];
                     const rune = std.unicode.utf8Decode(rune_bytes) catch {
-                        return self.e(&.{token_name orelse "utf-8 bytes"}, off);
+                        return self.e(error_mode, &.{"utf-8 bytes"}, off);
                     };
 
                     if (off < self.text.len and set.contains(rune)) {
                         result.* = rune;
                         return rune_len;
                     } else {
-                        return self.e(&.{token_name orelse comptime set.humanString()}, off); // TODO
+                        return self.e(error_mode, &.{comptime set.humanString()}, off); // TODO
                     }
                 },
-                .nt => |rule| return self.parseRule(rule, off, result),
+                .nt => |rule| return self.parseRuleInternal(rule, error_mode, off, result),
             }
         }
 
@@ -453,7 +547,13 @@ pub const LinePos = struct {
 };
 pub const ParseError = struct {
     expected: std.ArrayList([]const u8),
-    found: []const u8,
+    found: Token,
+
+    pub const Token = struct {
+        off: usize,
+        len: usize,
+        name: []const u8,
+    };
 
     pub fn format(self: ParseError, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try writer.writeAll("expected ");
@@ -472,8 +572,8 @@ pub const ParseError = struct {
             try writer.writeAll(exp);
         }
 
-        if (self.found.len > 0) {
-            try writer.print(", found {s}", .{self.found});
+        if (self.found.name.len > 0) {
+            try writer.print(", found {s}", .{self.found.name});
         }
     }
 };
@@ -770,6 +870,10 @@ test "error reporting" {
             .{ .syms = &.{ .{ .nt = .nested }, .{ .nt = .many } } },
             .{ .syms = &.{} },
         } };
+        pub const invalid = Rule{ .prods = &.{
+            .{ .syms = &.{.{ .set = SetBuilder.init().add("zxcvbn").set }} },
+            .{ .syms = &.{.{ .str = "evil" }} },
+        }, .kind = .token };
     };
 
     {
@@ -779,7 +883,47 @@ test "error reporting" {
         };
         defer p.deinit();
         try std.testing.expectError(error.InvalidParse, p.parse(.many));
-        try testError(p, 3, &.{ "token", "\"(\"", "\")\"" }, "eof");
+        try testError(p, 3, &.{ "token", "\"(\"", "\")\"" }, "eof", 0);
+    }
+
+    {
+        var p = Parser(rules, void){
+            .text = ")()",
+            .context = {},
+        };
+        defer p.deinit();
+        try std.testing.expectError(error.InvalidParse, p.parse(.many));
+        try testError(p, 0, &.{ "token", "\"(\"", "eof" }, "\")\"", 1);
+    }
+
+    {
+        var p = Parser(rules, void){
+            .text = "(zxcv)",
+            .context = {},
+        };
+        defer p.deinit();
+        try std.testing.expectError(error.InvalidParse, p.parse(.many));
+        try testError(p, 1, &.{ "token", "\"(\"", "\")\"" }, "invalid", 1);
+    }
+
+    {
+        var p = Parser(rules, void){
+            .text = "evil",
+            .context = {},
+        };
+        defer p.deinit();
+        try std.testing.expectError(error.InvalidParse, p.parse(.many));
+        try testError(p, 0, &.{ "token", "\"(\"", "eof" }, "\"evil\"", 4);
+    }
+
+    {
+        var p = Parser(rules, void){
+            .text = "(j)",
+            .context = {},
+        };
+        defer p.deinit();
+        try std.testing.expectError(error.InvalidParse, p.parse(.many));
+        try testError(p, 1, &.{ "token", "\"(\"", "\")\"" }, "", 0);
     }
 
     {
@@ -789,18 +933,19 @@ test "error reporting" {
         };
         defer p.deinit();
         try std.testing.expectError(error.Error, p.parse(.many));
-        try testError(p, 1, &.{}, "");
+        try testError(p, 1, &.{}, "", 0);
     }
 }
 
-fn testError(p: anytype, off: usize, expected: []const []const u8, found: []const u8) !void {
+fn testError(p: anytype, off: usize, expected: []const []const u8, found: []const u8, len: usize) !void {
     try std.testing.expect(p.err != null);
-    try std.testing.expectEqual(off, p.err.?.off);
+    try std.testing.expectEqual(off, p.err.?.found.off);
 
-    try std.testing.expectEqual(expected.len, p.err.?.err.expected.items.len);
-    for (p.err.?.err.expected.items) |e, i| {
+    try std.testing.expectEqual(expected.len, p.err.?.expected.items.len);
+    for (p.err.?.expected.items) |e, i| {
         try std.testing.expectEqualStrings(expected[i], e);
     }
 
-    try std.testing.expectEqualStrings(found, p.err.?.err.found);
+    try std.testing.expectEqualStrings(found, p.err.?.found.name);
+    try std.testing.expectEqual(len, p.err.?.found.len);
 }
