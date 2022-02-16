@@ -9,22 +9,22 @@ test "generate parens" {
     try std.testing.expectEqualStrings(
         \\const pag = @import("pag");
         \\
-        \\pub const nested: pag.Rule = &.{
+        \\pub const nested = pag.Rule{ .prods = &.{
         \\.{ .syms = &.{
         \\.{ .str = "(" },
         \\.{ .nt = .many },
         \\.{ .str = ")" },
         \\} },
-        \\};
+        \\} };
         \\
-        \\pub const many: pag.Rule = &.{
+        \\pub const many = pag.Rule{ .prods = &.{
         \\.{ .syms = &.{
         \\.{ .nt = .nested },
         \\.{ .nt = .many },
         \\} },
         \\.{ .syms = &.{
         \\} },
-        \\};
+        \\} };
         \\
         \\
     , array.items);
@@ -39,7 +39,7 @@ test "generate hex number" {
         \\
         \\const std = @import("std");
         \\
-        \\pub const num: pag.Rule = &.{
+        \\pub const num = pag.Rule{ .prods = &.{
         \\.{ .syms = &.{
         \\.{ .nt = .digit },
         \\.{ .nt = .num },
@@ -58,11 +58,11 @@ test "generate hex number" {
         \\digit: u4,
         \\) !u64 { return digit; }
         \\} },
-        \\};
+        \\} };
         \\
-        \\pub const digit: pag.Rule = &.{
+        \\pub const digit = pag.Rule{ .prods = &.{
         \\.{ .syms = &.{
-        \\.{ .set = &pag.SetBuilder.init()
+        \\.{ .set = pag.SetBuilder.init()
         \\.addRange('0', '9')
         \\.addRange('a', 'f')
         \\.addRange('A', 'F')
@@ -75,7 +75,7 @@ test "generate hex number" {
         \\  return std.fmt.parseInt(u4, &.{ch}, 16);
         \\}
         \\} },
-        \\};
+        \\} };
         \\
         \\
     , array.items);
@@ -88,26 +88,26 @@ test "generate quoted string" {
     try std.testing.expectEqualStrings(
         \\const pag = @import("pag");
         \\
-        \\pub const string: pag.Rule = &.{
+        \\pub const string = pag.Rule{ .prods = &.{
         \\.{ .syms = &.{
         \\.{ .str = "\"" },
         \\.{ .nt = .@"string-chars" },
         \\.{ .str = "\"" },
         \\} },
-        \\};
+        \\} };
         \\
-        \\pub const @"string-chars": pag.Rule = &.{
+        \\pub const @"string-chars" = pag.Rule{ .prods = &.{
         \\.{ .syms = &.{
         \\.{ .nt = .@"string-char" },
         \\.{ .nt = .@"string-chars" },
         \\} },
         \\.{ .syms = &.{
         \\} },
-        \\};
+        \\} };
         \\
-        \\pub const @"string-char": pag.Rule = &.{
+        \\pub const @"string-char" = pag.Rule{ .prods = &.{
         \\.{ .syms = &.{
-        \\.{ .set = &pag.SetBuilder.init()
+        \\.{ .set = pag.SetBuilder.init()
         \\.add("\\")
         \\.add("\"")
         \\.invert()
@@ -117,11 +117,11 @@ test "generate quoted string" {
         \\.{ .str = "\\" },
         \\.{ .nt = .@"string-char-escaped" },
         \\} },
-        \\};
+        \\} };
         \\
-        \\pub const @"string-char-escaped": pag.Rule = &.{
+        \\pub const @"string-char-escaped" = pag.Rule{ .prods = &.{
         \\.{ .syms = &.{
-        \\.{ .set = &pag.SetBuilder.init()
+        \\.{ .set = pag.SetBuilder.init()
         \\.add("\\")
         \\.add("\"")
         \\.set },
@@ -131,17 +131,17 @@ test "generate quoted string" {
         \\.{ .nt = .hexdig },
         \\.{ .nt = .hexdig },
         \\} },
-        \\};
+        \\} };
         \\
-        \\pub const hexdig: pag.Rule = &.{
+        \\pub const hexdig = pag.Rule{ .prods = &.{
         \\.{ .syms = &.{
-        \\.{ .set = &pag.SetBuilder.init()
+        \\.{ .set = pag.SetBuilder.init()
         \\.addRange('0', '9')
         \\.addRange('a', 'f')
         \\.addRange('A', 'F')
         \\.set },
         \\} },
-        \\};
+        \\} };
         \\
         \\
     , array.items);

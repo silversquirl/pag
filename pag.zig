@@ -214,8 +214,13 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
             result: *RuleResult(rule_name),
         ) RuleError(rule_name)!usize {
             const rule = @field(rules, @tagName(rule_name));
-            inline for (rule) |prod| {
-                if (self.parseProd(prod, off, result)) |n| {
+            const token_name: ?[]const u8 = switch (rule.kind) {
+                .nonterminal => null,
+                .token => @tagName(rule_name),
+            };
+
+            inline for (rule.prods) |prod| {
+                if (self.parseProd(prod, token_name, off, result)) |n| {
                     return n;
                 } else |err| switch (err) {
                     error.InvalidParse => {},
@@ -229,6 +234,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
         fn parseProd(
             self: *Self,
             comptime prod: Production,
+            comptime token_name: ?[]const u8,
             off: usize,
             result: *ProdResult(prod),
         ) ProdError(prod)!usize {
@@ -248,7 +254,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                     const fty = @TypeOf(args[i + 1]);
                     const sty = SymbolResult(sym);
                     var res: sty = undefined;
-                    n += try self.parseSym(sym, off + n, &res);
+                    n += try self.parseSym(sym, token_name, off + n, &res);
 
                     if (fty == sty) {
                         args[i + 1] = res;
@@ -279,7 +285,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                 var n: usize = 0;
                 inline for (prod.syms) |sym| {
                     var res: SymbolResult(sym) = undefined;
-                    n += try self.parseSym(sym, off + n, &res);
+                    n += try self.parseSym(sym, token_name, off + n, &res);
                 }
                 return n;
             }
@@ -288,6 +294,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
         fn parseSym(
             self: *Self,
             comptime sym: Symbol,
+            comptime token_name: ?[]const u8,
             off: usize,
             result: *SymbolResult(sym),
         ) !usize {
@@ -295,7 +302,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                 .end => if (off >= self.text.len) {
                     return 0;
                 } else {
-                    return self.e(&.{"eof"}, off);
+                    return self.e(&.{token_name orelse "eof"}, off);
                 },
                 .str => |expected| if (std.mem.startsWith(u8, self.text[off..], expected)) {
                     result.* = self.text[off .. off + expected.len];
@@ -309,11 +316,11 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                             std.zig.fmtEscapes(expected),
                         });
                     };
-                    return self.e(&.{err_expected}, off);
+                    return self.e(&.{token_name orelse err_expected}, off);
                 },
                 .set => |set| {
                     if (off >= self.text.len) {
-                        return self.e(&.{comptime set.humanString()}, off); // TODO
+                        return self.e(&.{token_name orelse comptime set.humanString()}, off); // TODO
                     }
 
                     const rune_len = std.unicode.utf8ByteSequenceLength(self.text[off]) catch {
@@ -321,19 +328,19 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                         return error.InvalidUtf8;
                     };
                     if (off + rune_len > self.text.len) {
-                        return self.e(&.{"utf-8 bytes"}, off);
+                        return self.e(&.{token_name orelse "utf-8 bytes"}, off);
                     }
 
                     const rune_bytes = self.text[off .. off + rune_len];
                     const rune = std.unicode.utf8Decode(rune_bytes) catch {
-                        return self.e(&.{"utf-8 bytes"}, off);
+                        return self.e(&.{token_name orelse "utf-8 bytes"}, off);
                     };
 
                     if (off < self.text.len and set.contains(rune)) {
                         result.* = rune;
                         return rune_len;
                     } else {
-                        return self.e(&.{comptime set.humanString()}, off); // TODO
+                        return self.e(&.{token_name orelse comptime set.humanString()}, off); // TODO
                     }
                 },
                 .nt => |rule| return self.parseRule(rule, off, result),
@@ -344,12 +351,12 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
             const rule_name = @tagName(rule_name_e);
             const rule = @field(rules, rule_name);
 
-            if (rule.len == 0) {
+            if (rule.prods.len == 0) {
                 @compileError("rule '" ++ rule_name ++ "' has no productions");
             }
 
-            const ty = ProdResult(rule[0]);
-            for (rule[1..]) |prod| {
+            const ty = ProdResult(rule.prods[0]);
+            for (rule.prods[1..]) |prod| {
                 if (ProdResult(prod) != ty) {
                     @compileError("rule '" ++ rule_name ++ "' has productions of differing types");
                 }
@@ -373,12 +380,12 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
             const rule_name = @tagName(rule_name_e);
             const rule = @field(rules, rule_name);
 
-            if (rule.len == 0) {
+            if (rule.prods.len == 0) {
                 @compileError("rule '" ++ rule_name ++ "' has no productions");
             }
 
             var E = BaseError;
-            for (rule) |prod| {
+            for (rule.prods) |prod| {
                 E = E || ProdErrorR(prod, checked);
             }
 
@@ -471,7 +478,11 @@ pub const ParseError = struct {
     }
 };
 
-pub const Rule = []const Production;
+pub const Rule = struct {
+    prods: []const Production,
+    kind: Kind = .nonterminal,
+    pub const Kind = enum { nonterminal, token };
+};
 pub const Production = struct {
     syms: []const Symbol,
     handler: ?type = null,
@@ -479,7 +490,7 @@ pub const Production = struct {
 pub const Symbol = union(enum) {
     end: void,
     str: []const u8,
-    set: *const Set,
+    set: Set,
     nt: @Type(.EnumLiteral),
 };
 pub const Set = struct {
@@ -575,13 +586,13 @@ pub const SetBuilder = struct {
 test "parens" {
     // Construct a parser for matched paren pairs
     const rules = struct {
-        pub const nested: Rule = &.{
+        pub const nested = Rule{ .prods = &.{
             .{ .syms = &.{ .{ .str = "(" }, .{ .nt = .many }, .{ .str = ")" } } },
-        };
-        pub const many: Rule = &.{
+        } };
+        pub const many = Rule{ .prods = &.{
             .{ .syms = &.{ .{ .nt = .nested }, .{ .nt = .many } } },
             .{ .syms = &.{} },
-        };
+        } };
     };
 
     // Check it parses correctly
@@ -609,19 +620,19 @@ test "parens" {
 test "hex number" {
     // Construct a parser for unsigned hexadecimal numbers
     const rules = struct {
-        pub const digit: Rule = &.{
+        pub const digit = Rule{ .prods = &.{
             .{ .syms = &.{
-                .{ .set = &SetBuilder.init()
+                .{ .set = SetBuilder.init()
                     .addRange('0', '9')
                     .addRange('a', 'f')
                     .addRange('A', 'F')
                     .set },
             } },
-        };
-        pub const num: Rule = &.{
+        } };
+        pub const num = Rule{ .prods = &.{
             .{ .syms = &.{ .{ .nt = .digit }, .{ .nt = .num } } },
             .{ .syms = &.{.{ .nt = .digit }} },
-        };
+        } };
     };
 
     // Check it parses correctly
@@ -643,16 +654,16 @@ test "hex number" {
 test "quoted string" {
     // Construct a parser for quoted strings
     const rules = struct {
-        pub const string: Rule = &.{
+        pub const string = Rule{ .prods = &.{
             .{ .syms = &.{ .{ .str = "\"" }, .{ .nt = .chars }, .{ .str = "\"" } } },
-        };
-        pub const chars: Rule = &.{
+        } };
+        pub const chars = Rule{ .prods = &.{
             .{ .syms = &.{ .{ .nt = .char }, .{ .nt = .chars } } },
             .{ .syms = &.{} },
-        };
-        pub const char: Rule = &.{
+        } };
+        pub const char = Rule{ .prods = &.{
             .{ .syms = &.{
-                .{ .set = &SetBuilder.init()
+                .{ .set = SetBuilder.init()
                     .add("\\\"")
                     .invert()
                     .set },
@@ -661,24 +672,24 @@ test "quoted string" {
                 .{ .str = "\\" },
                 .{ .nt = .escaped_char },
             } },
-        };
-        pub const escaped_char: Rule = &.{
+        }, .kind = .token };
+        pub const escaped_char = Rule{ .prods = &.{
             .{ .syms = &.{
-                .{ .set = &SetBuilder.init()
+                .{ .set = SetBuilder.init()
                     .add("\\\"")
                     .set },
             } },
             .{ .syms = &.{ .{ .str = "x" }, .{ .nt = .hexdig }, .{ .nt = .hexdig } } },
-        };
-        pub const hexdig: Rule = &.{
+        } };
+        pub const hexdig = Rule{ .prods = &.{
             .{ .syms = &.{
-                .{ .set = &SetBuilder.init()
+                .{ .set = SetBuilder.init()
                     .addRange('0', '9')
                     .addRange('a', 'f')
                     .addRange('A', 'F')
                     .set },
             } },
-        };
+        } };
     };
 
     // Check it parses correctly
@@ -743,18 +754,22 @@ test "quoted string" {
 test "error reporting" {
     // Construct a parser for matched paren pairs
     const rules = struct {
-        pub const nested: Rule = &.{
-            .{ .syms = &.{ .{ .str = "(" }, .{ .nt = .many }, .{ .str = ")" } } },
+        pub const token = Rule{ .prods = &.{
+            .{ .syms = &.{.{ .set = SetBuilder.init().add("abcd").set }} },
             .{ .syms = &.{.{ .str = "error" }}, .handler = struct {
                 pub fn match(_: void, _: []const u8) !void {
                     return error.Error;
                 }
             } },
-        };
-        pub const many: Rule = &.{
+        }, .kind = .token };
+        pub const nested = Rule{ .prods = &.{
+            .{ .syms = &.{.{ .nt = .token }} },
+            .{ .syms = &.{ .{ .str = "(" }, .{ .nt = .many }, .{ .str = ")" } } },
+        } };
+        pub const many = Rule{ .prods = &.{
             .{ .syms = &.{ .{ .nt = .nested }, .{ .nt = .many } } },
             .{ .syms = &.{} },
-        };
+        } };
     };
 
     {
@@ -764,8 +779,7 @@ test "error reporting" {
         };
         defer p.deinit();
         try std.testing.expectError(error.InvalidParse, p.parse(.many));
-        try std.testing.expect(p.err != null);
-        try std.testing.expectEqual(@as(usize, 3), p.err.?.off);
+        try testError(p, 3, &.{ "token", "\"(\"", "\")\"" }, "eof");
     }
 
     {
@@ -775,9 +789,18 @@ test "error reporting" {
         };
         defer p.deinit();
         try std.testing.expectError(error.Error, p.parse(.many));
-        try std.testing.expect(p.err != null);
-        try std.testing.expectEqual(@as(usize, 1), p.err.?.off);
-        try std.testing.expectEqual(@as(usize, 0), p.err.?.err.expected.items.len);
-        try std.testing.expectEqualStrings("", p.err.?.err.found);
+        try testError(p, 1, &.{}, "");
     }
+}
+
+fn testError(p: anytype, off: usize, expected: []const []const u8, found: []const u8) !void {
+    try std.testing.expect(p.err != null);
+    try std.testing.expectEqual(off, p.err.?.off);
+
+    try std.testing.expectEqual(expected.len, p.err.?.err.expected.items.len);
+    for (p.err.?.err.expected.items) |e, i| {
+        try std.testing.expectEqualStrings(expected[i], e);
+    }
+
+    try std.testing.expectEqualStrings(found, p.err.?.err.found);
 }

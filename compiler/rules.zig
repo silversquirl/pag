@@ -46,7 +46,7 @@ fn ArrayBuilder(comptime T: type) type {
     };
 }
 
-pub const file: pag.Rule = &.{
+pub const file = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .nt = .@"ws?" },
         .{ .nt = .toplevel },
@@ -75,9 +75,9 @@ pub const file: pag.Rule = &.{
             return ArrayBuilder(ast.Toplevel).empty();
         }
     } },
-};
+} };
 
-pub const toplevel: pag.Rule = &.{
+pub const toplevel = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .nt = .pragma },
     }, .handler = struct {
@@ -111,9 +111,9 @@ pub const toplevel: pag.Rule = &.{
             return ast.Toplevel{ .rule = r };
         }
     } },
-};
+} };
 
-pub const pragma: pag.Rule = &.{
+pub const pragma = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .str = "#context" },
         .{ .nt = .ws },
@@ -141,9 +141,9 @@ pub const pragma: pag.Rule = &.{
             return ast.Pragma{ .context = .{ .name = name, .type = ty } };
         }
     } },
-};
+} };
 
-pub const block: pag.Rule = &.{
+pub const block = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .str = "{" },
         .{ .nt = .@"zig-code" },
@@ -159,11 +159,11 @@ pub const block: pag.Rule = &.{
             return ArrayBuilder(u8).finish(allocator, code);
         }
     } },
-};
+} };
 
-pub const @"zig-code": pag.Rule = &.{
+pub const @"zig-code" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
-        .{ .set = &pag.SetBuilder.init()
+        .{ .set = pag.SetBuilder.init()
             .add("\"")
             .add("{")
             .add("}")
@@ -220,9 +220,9 @@ pub const @"zig-code": pag.Rule = &.{
             return ArrayBuilder(u8).empty();
         }
     } },
-};
+} };
 
-pub const @"zig-string": pag.Rule = &.{
+pub const @"zig-string" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .str = "\"" },
         .{ .nt = .@"zig-ds-chars" },
@@ -253,11 +253,11 @@ pub const @"zig-string": pag.Rule = &.{
             return ArrayBuilder(u8).finishDelim(allocator, '\'', str, '\'');
         }
     } },
-};
+} };
 
-pub const @"zig-ds-chars": pag.Rule = &.{
+pub const @"zig-ds-chars" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
-        .{ .set = &pag.SetBuilder.init()
+        .{ .set = pag.SetBuilder.init()
             .add("\\")
             .add("\"")
             .invert()
@@ -275,7 +275,7 @@ pub const @"zig-ds-chars": pag.Rule = &.{
     } },
     .{ .syms = &.{
         .{ .str = "\\" },
-        .{ .set = &pag.SetBuilder.init()
+        .{ .set = pag.SetBuilder.init()
             .addRange('\x00', '\xff')
             .set },
         .{ .nt = .@"zig-ss-chars" },
@@ -301,11 +301,11 @@ pub const @"zig-ds-chars": pag.Rule = &.{
             return ArrayBuilder(u8).empty();
         }
     } },
-};
+} };
 
-pub const @"zig-ss-chars": pag.Rule = &.{
+pub const @"zig-ss-chars" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
-        .{ .set = &pag.SetBuilder.init()
+        .{ .set = pag.SetBuilder.init()
             .add("\\")
             .add("'")
             .invert()
@@ -323,7 +323,7 @@ pub const @"zig-ss-chars": pag.Rule = &.{
     } },
     .{ .syms = &.{
         .{ .str = "\\" },
-        .{ .set = &pag.SetBuilder.init()
+        .{ .set = pag.SetBuilder.init()
             .addRange('\x00', '\xff')
             .set },
         .{ .nt = .@"zig-ss-chars" },
@@ -349,9 +349,9 @@ pub const @"zig-ss-chars": pag.Rule = &.{
             return ArrayBuilder(u8).empty();
         }
     } },
-};
+} };
 
-pub const rule: pag.Rule = &.{
+pub const rule = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .nt = .ident },
         .{ .nt = .@"ws?" },
@@ -383,9 +383,9 @@ pub const rule: pag.Rule = &.{
             };
         }
     } },
-};
+} };
 
-pub const productions: pag.Rule = &.{
+pub const productions = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .nt = .production },
         .{ .nt = .@"ws?" },
@@ -416,9 +416,9 @@ pub const productions: pag.Rule = &.{
             return ArrayBuilder(ast.Production).one(allocator, prod);
         }
     } },
-};
+} };
 
-pub const production: pag.Rule = &.{
+pub const production = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .nt = .symbols },
         .{ .nt = .@"ws?" },
@@ -437,9 +437,9 @@ pub const production: pag.Rule = &.{
             };
         }
     } },
-};
+} };
 
-pub const symbols: pag.Rule = &.{
+pub const symbols = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .nt = .symbol },
         .{ .nt = .@"ws?" },
@@ -463,9 +463,9 @@ pub const symbols: pag.Rule = &.{
             return ArrayBuilder(ast.Symbol).empty();
         }
     } },
-};
+} };
 
-pub const symbol: pag.Rule = &.{
+pub const symbol = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .nt = .ident },
     }, .handler = struct {
@@ -510,9 +510,9 @@ pub const symbol: pag.Rule = &.{
             return ast.Symbol.end;
         }
     } },
-};
+} };
 
-pub const @"func?": pag.Rule = &.{
+pub const @"func?" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .str = "@" },
         .{ .nt = .@"ws?" },
@@ -551,9 +551,9 @@ pub const @"func?": pag.Rule = &.{
             return null;
         }
     } },
-};
+} };
 
-pub const args: pag.Rule = &.{
+pub const args = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .nt = .@"zig-ident" },
         .{ .nt = .@"ws?" },
@@ -592,9 +592,9 @@ pub const args: pag.Rule = &.{
             return ArrayBuilder([]const u8).empty();
         }
     } },
-};
+} };
 
-pub const @"zig-ident": pag.Rule = &.{
+pub const @"zig-ident" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .nt = .@"zig-ident-first-char" },
         .{ .nt = .@"zig-ident-rest" },
@@ -609,9 +609,9 @@ pub const @"zig-ident": pag.Rule = &.{
             return ArrayBuilder(u8).finish(allocator, id);
         }
     } },
-};
+} };
 
-pub const @"zig-ident-rest": pag.Rule = &.{
+pub const @"zig-ident-rest" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .nt = .@"zig-ident-char" },
         .{ .nt = .@"zig-ident-rest" },
@@ -633,11 +633,11 @@ pub const @"zig-ident-rest": pag.Rule = &.{
             return ArrayBuilder(u8).empty();
         }
     } },
-};
+} };
 
-pub const @"zig-ident-first-char": pag.Rule = &.{
+pub const @"zig-ident-first-char" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
-        .{ .set = &pag.SetBuilder.init()
+        .{ .set = pag.SetBuilder.init()
             .addRange('a', 'z')
             .addRange('A', 'Z')
             .add("_")
@@ -651,11 +651,11 @@ pub const @"zig-ident-first-char": pag.Rule = &.{
             return @intCast(u8, ch);
         }
     } },
-};
+} };
 
-pub const @"zig-ident-char": pag.Rule = &.{
+pub const @"zig-ident-char" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
-        .{ .set = &pag.SetBuilder.init()
+        .{ .set = pag.SetBuilder.init()
             .addRange('a', 'z')
             .addRange('A', 'Z')
             .addRange('0', '9')
@@ -670,9 +670,9 @@ pub const @"zig-ident-char": pag.Rule = &.{
             return @intCast(u8, ch);
         }
     } },
-};
+} };
 
-pub const @"type-annotation?": pag.Rule = &.{
+pub const @"type-annotation?" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .str = ":" },
         .{ .nt = .@"ws?" },
@@ -696,9 +696,9 @@ pub const @"type-annotation?": pag.Rule = &.{
             return null;
         }
     } },
-};
+} };
 
-pub const @"zig-type": pag.Rule = &.{
+pub const @"zig-type" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .nt = .block },
     }, .handler = struct {
@@ -710,9 +710,9 @@ pub const @"zig-type": pag.Rule = &.{
             return ty;
         }
     } },
-};
+} };
 
-pub const ident: pag.Rule = &.{
+pub const ident = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .nt = .@"ident-internal" },
     }, .handler = struct {
@@ -724,9 +724,9 @@ pub const ident: pag.Rule = &.{
             return ArrayBuilder(u8).finish(allocator, id);
         }
     } },
-};
+} };
 
-pub const @"ident-internal": pag.Rule = &.{
+pub const @"ident-internal" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .nt = .@"ident-char" },
         .{ .nt = .@"ident-internal" },
@@ -751,11 +751,11 @@ pub const @"ident-internal": pag.Rule = &.{
             return ArrayBuilder(u8).one(allocator, ch);
         }
     } },
-};
+} };
 
-pub const @"ident-char": pag.Rule = &.{
+pub const @"ident-char" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
-        .{ .set = &pag.SetBuilder.init()
+        .{ .set = pag.SetBuilder.init()
             .addRange('a', 'z')
             .addRange('A', 'Z')
             .addRange('0', '9')
@@ -773,9 +773,9 @@ pub const @"ident-char": pag.Rule = &.{
             return @intCast(u8, ch);
         }
     } },
-};
+} };
 
-pub const string: pag.Rule = &.{
+pub const string = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .str = "\"" },
         .{ .nt = .@"string-chars" },
@@ -791,9 +791,9 @@ pub const string: pag.Rule = &.{
             return ArrayBuilder(u8).finish(allocator, str);
         }
     } },
-};
+} };
 
-pub const @"string-chars": pag.Rule = &.{
+pub const @"string-chars" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .nt = .@"string-char" },
         .{ .nt = .@"string-chars" },
@@ -815,11 +815,11 @@ pub const @"string-chars": pag.Rule = &.{
             return ArrayBuilder(u8).empty();
         }
     } },
-};
+} };
 
-pub const @"string-char": pag.Rule = &.{
+pub const @"string-char" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
-        .{ .set = &pag.SetBuilder.init()
+        .{ .set = pag.SetBuilder.init()
             .add("\\")
             .add("\"")
             .invert()
@@ -846,11 +846,11 @@ pub const @"string-char": pag.Rule = &.{
             return @intCast(u8, ch);
         }
     } },
-};
+} };
 
-pub const @"string-char-escaped": pag.Rule = &.{
+pub const @"string-char-escaped" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
-        .{ .set = &pag.SetBuilder.init()
+        .{ .set = pag.SetBuilder.init()
             .add("\\")
             .add("\"")
             .set },
@@ -878,9 +878,9 @@ pub const @"string-char-escaped": pag.Rule = &.{
             return (@as(u8, h) << 4) | l;
         }
     } },
-};
+} };
 
-pub const set: pag.Rule = &.{
+pub const set = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .str = "[" },
         .{ .nt = .@"set-invert?" },
@@ -901,9 +901,9 @@ pub const set: pag.Rule = &.{
             };
         }
     } },
-};
+} };
 
-pub const @"set-invert?": pag.Rule = &.{
+pub const @"set-invert?" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .str = "^" },
     }, .handler = struct {
@@ -923,9 +923,9 @@ pub const @"set-invert?": pag.Rule = &.{
             return false;
         }
     } },
-};
+} };
 
-pub const @"set-entries": pag.Rule = &.{
+pub const @"set-entries" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .nt = .@"set-entry" },
         .{ .nt = .@"set-entries" },
@@ -950,9 +950,9 @@ pub const @"set-entries": pag.Rule = &.{
             return ArrayBuilder(ast.Set.Entry).one(allocator, entry);
         }
     } },
-};
+} };
 
-pub const @"set-entry": pag.Rule = &.{
+pub const @"set-entry" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .nt = .@"set-char" },
         .{ .str = "-" },
@@ -982,11 +982,11 @@ pub const @"set-entry": pag.Rule = &.{
             return ast.Set.Entry{ .ch = ch };
         }
     } },
-};
+} };
 
-pub const @"set-char": pag.Rule = &.{
+pub const @"set-char" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
-        .{ .set = &pag.SetBuilder.init()
+        .{ .set = pag.SetBuilder.init()
             .add("[")
             .add("]")
             .add("\\")
@@ -1014,11 +1014,11 @@ pub const @"set-char": pag.Rule = &.{
             return @intCast(u8, ch);
         }
     } },
-};
+} };
 
-pub const @"set-char-escaped": pag.Rule = &.{
+pub const @"set-char-escaped" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
-        .{ .set = &pag.SetBuilder.init()
+        .{ .set = pag.SetBuilder.init()
             .add("-")
             .add("^")
             .add("[")
@@ -1049,18 +1049,18 @@ pub const @"set-char-escaped": pag.Rule = &.{
             return (@as(u8, h) << 4) | l;
         }
     } },
-};
+} };
 
-pub const @"ws?": pag.Rule = &.{
+pub const @"ws?" = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .nt = .ws },
     } },
     .{ .syms = &.{} },
-};
+} };
 
-pub const ws: pag.Rule = &.{
+pub const ws = pag.Rule{ .prods = &.{
     .{ .syms = &.{
-        .{ .set = &pag.SetBuilder.init()
+        .{ .set = pag.SetBuilder.init()
             .add(" ")
             .add("\t")
             .add("\n")
@@ -1073,22 +1073,22 @@ pub const ws: pag.Rule = &.{
         .{ .str = "\n" },
         .{ .nt = .@"ws?" },
     } },
-};
+} };
 
-pub const comment: pag.Rule = &.{
+pub const comment = pag.Rule{ .prods = &.{
     .{ .syms = &.{
-        .{ .set = &pag.SetBuilder.init()
+        .{ .set = pag.SetBuilder.init()
             .add("\n")
             .invert()
             .set },
         .{ .nt = .comment },
     } },
     .{ .syms = &.{} },
-};
+} };
 
-pub const hexdig: pag.Rule = &.{
+pub const hexdig = pag.Rule{ .prods = &.{
     .{ .syms = &.{
-        .{ .set = &pag.SetBuilder.init()
+        .{ .set = pag.SetBuilder.init()
             .addRange('0', '9')
             .set },
     }, .handler = struct {
@@ -1101,7 +1101,7 @@ pub const hexdig: pag.Rule = &.{
         }
     } },
     .{ .syms = &.{
-        .{ .set = &pag.SetBuilder.init()
+        .{ .set = pag.SetBuilder.init()
             .addRange('a', 'f')
             .set },
     }, .handler = struct {
@@ -1114,7 +1114,7 @@ pub const hexdig: pag.Rule = &.{
         }
     } },
     .{ .syms = &.{
-        .{ .set = &pag.SetBuilder.init()
+        .{ .set = pag.SetBuilder.init()
             .addRange('A', 'F')
             .set },
     }, .handler = struct {
@@ -1126,10 +1126,10 @@ pub const hexdig: pag.Rule = &.{
             return @intCast(u4, ch - 'A' + 10);
         }
     } },
-};
+} };
 
-pub const end: pag.Rule = &.{
+pub const end = pag.Rule{ .prods = &.{
     .{ .syms = &.{
         .{ .str = "$" },
     } },
-};
+} };

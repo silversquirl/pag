@@ -50,7 +50,7 @@ pub fn generate(writer: anytype, file: File) !void {
     }
 
     for (file.rules) |rule| {
-        try writer.print("pub const {}: pag.Rule = &.{{\n", .{std.zig.fmtId(rule.name)});
+        try writer.print("pub const {} = pag.Rule{{ .prods = &.{{\n", .{std.zig.fmtId(rule.name)});
         for (rule.prods) |prod| {
             try writer.writeAll(".{ .syms = &.{\n");
             for (prod.syms) |sym| {
@@ -99,7 +99,11 @@ pub fn generate(writer: anytype, file: File) !void {
 
             try writer.writeAll(" },\n");
         }
-        try writer.writeAll("};\n\n");
+        try writer.writeAll("}");
+        if (isToken(rule.name)) {
+            try writer.writeAll(", .kind = .token");
+        }
+        try writer.writeAll(" };\n\n");
     }
 }
 fn generateSet(writer: anytype, set: Set) !void {
@@ -112,7 +116,7 @@ fn generateSet(writer: anytype, set: Set) !void {
         return;
     }
 
-    try writer.writeAll(".{ .set = &pag.SetBuilder.init()\n");
+    try writer.writeAll(".{ .set = pag.SetBuilder.init()\n");
     for (set.entries) |entry| {
         switch (entry) {
             // TODO: merge all chars into one add
@@ -130,12 +134,13 @@ fn generateSet(writer: anytype, set: Set) !void {
     }
     try writer.writeAll(".set },\n");
 }
-fn writeNumberedId(writer: anytype, ident: []const u8, num: usize) !void {
-    if (std.zig.isValidId(ident)) {
-        try writer.print("{s}{}", .{ ident, num });
-    } else {
-        try writer.print("@\"{s}{}\"", .{ ident, num });
+fn isToken(s: []const u8) bool {
+    for (s) |c| {
+        if (std.ascii.isLower(c)) {
+            return false;
+        }
     }
+    return true;
 }
 
 pub fn List(comptime T: type) type {
