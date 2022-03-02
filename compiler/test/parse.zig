@@ -42,10 +42,25 @@ fn expectEqualAsts(expected: ast.File, actual: ast.File) !void {
             }
         }
     }
+
+    {
+        var it = expected.ignore.iterator();
+        while (it.next()) |ent| {
+            try std.testing.expect(actual.ignore.get(ent.key_ptr.*) != null);
+        }
+    }
+    {
+        var it = actual.ignore.iterator();
+        while (it.next()) |ent| {
+            try std.testing.expect(expected.ignore.get(ent.key_ptr.*) != null);
+        }
+    }
 }
 
 test "parse parens" {
     const source =
+        \\#ignore WS;
+        \\WS = [ \x09\x0a];
         \\nested = "(" many ")";
         \\many   = nested many | ;
     ;
@@ -53,7 +68,7 @@ test "parse parens" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const actual = try ast.parse(arena.allocator(), source);
-    try expectEqualAsts(asts.parens, actual);
+    try expectEqualAsts(try asts.parens(arena.allocator()), actual);
 }
 
 test "parse hex number" {

@@ -10,6 +10,8 @@ pub fn parse(allocator: std.mem.Allocator, source: []const u8) !File {
     errdefer header.deinit();
     var rules = std.ArrayList(Rule).init(allocator);
     errdefer rules.deinit();
+    var ignore = std.StringHashMap(void).init(allocator);
+    errdefer ignore.deinit();
     var context = Context{
         .name = "_",
         .type = "void",
@@ -21,6 +23,7 @@ pub fn parse(allocator: std.mem.Allocator, source: []const u8) !File {
         switch (tls_rev.items[i]) {
             .pragma => |prag| switch (prag) {
                 .context => |ctx| context = ctx,
+                .ignore => |name| try ignore.put(name, {}),
             },
             .block => |code| {
                 try header.appendSlice(code);
@@ -33,6 +36,7 @@ pub fn parse(allocator: std.mem.Allocator, source: []const u8) !File {
     return File{
         .header = header.toOwnedSlice(),
         .rules = rules.toOwnedSlice(),
+        .ignore = ignore.unmanaged,
         .context = context,
     };
 }
@@ -100,7 +104,9 @@ pub fn generate(writer: anytype, file: File) !void {
             try writer.writeAll(" },\n");
         }
         try writer.writeAll("}");
-        if (isToken(rule.name)) {
+        if (file.ignore.get(rule.name)) |_| {
+            try writer.writeAll(", .kind = .ignored_token");
+        } else if (isToken(rule.name)) {
             try writer.writeAll(", .kind = .token");
         }
         try writer.writeAll(" };\n\n");
@@ -200,6 +206,7 @@ pub fn List(comptime T: type) type {
 pub const File = struct {
     header: []const u8,
     rules: []const Rule,
+    ignore: std.StringHashMapUnmanaged(void) = .{},
     context: Context,
 };
 pub const Context = struct {
@@ -213,6 +220,7 @@ pub const Toplevel = union(enum) {
 };
 pub const Pragma = union(enum) {
     context: Context,
+    ignore: []const u8,
 };
 pub const Rule = struct {
     name: []const u8,

@@ -5,9 +5,22 @@ const asts = @import("asts.zig");
 test "generate parens" {
     var array = std.ArrayList(u8).init(std.testing.allocator);
     defer array.deinit();
-    try ast.generate(array.writer(), asts.parens);
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const in_ast = try asts.parens(arena.allocator());
+    try ast.generate(array.writer(), in_ast);
     try std.testing.expectEqualStrings(
         \\const pag = @import("pag");
+        \\
+        \\pub const WS = pag.Rule{ .prods = &.{
+        \\.{ .syms = &.{
+        \\.{ .set = pag.SetBuilder.init()
+        \\.add(" ")
+        \\.add("\t")
+        \\.add("\n")
+        \\.set },
+        \\} },
+        \\}, .kind = .ignored_token };
         \\
         \\pub const nested = pag.Rule{ .prods = &.{
         \\.{ .syms = &.{

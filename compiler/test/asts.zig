@@ -1,26 +1,41 @@
 //! ASTs used for testing parser and generator
+const std = @import("std");
 const ast = @import("../ast.zig");
 
-pub const parens = ast.File{
-    .header = "",
-    .rules = &.{
-        .{ .name = "nested", .type = "void", .prods = &.{
-            .{ .syms = &.{
-                .{ .str = "(" }, .{ .nt = "many" }, .{ .str = ")" },
-            }, .func = null },
-        } },
-        .{ .name = "many", .type = "void", .prods = &.{
-            .{ .syms = &.{
-                .{ .nt = "nested" }, .{ .nt = "many" },
-            }, .func = null },
-            .{ .syms = &.{}, .func = null },
-        } },
-    },
-    .context = .{
-        .name = "_",
-        .type = "void",
-    },
-};
+pub fn parens(allocator: std.mem.Allocator) !ast.File {
+    var ignore = std.StringHashMap(void).init(allocator);
+    try ignore.put("WS", {});
+    return ast.File{
+        .header = "",
+        .rules = &.{
+            .{ .name = "WS", .type = "void", .prods = &.{
+                .{ .syms = &.{
+                    .{ .set = .{ .entries = &.{
+                        .{ .ch = ' ' },
+                        .{ .ch = '\t' },
+                        .{ .ch = '\n' },
+                    }, .invert = false } },
+                }, .func = null },
+            } },
+            .{ .name = "nested", .type = "void", .prods = &.{
+                .{ .syms = &.{
+                    .{ .str = "(" }, .{ .nt = "many" }, .{ .str = ")" },
+                }, .func = null },
+            } },
+            .{ .name = "many", .type = "void", .prods = &.{
+                .{ .syms = &.{
+                    .{ .nt = "nested" }, .{ .nt = "many" },
+                }, .func = null },
+                .{ .syms = &.{}, .func = null },
+            } },
+        },
+        .ignore = ignore.unmanaged,
+        .context = .{
+            .name = "_",
+            .type = "void",
+        },
+    };
+}
 
 pub const hexnum = ast.File{
     .header = "const std = @import(\"std\");",

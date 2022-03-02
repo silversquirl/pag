@@ -141,6 +141,25 @@ pub const pragma = pag.Rule{ .prods = &.{
             return ast.Pragma{ .context = .{ .name = name, .type = ty } };
         }
     } },
+    .{ .syms = &.{
+        .{ .str = "#ignore" },
+        .{ .nt = .ws },
+        .{ .nt = .ident },
+        .{ .nt = .@"ws?" },
+        .{ .str = ";" },
+    }, .handler = struct {
+        pub fn match(
+            allocator: std.mem.Allocator,
+            _: []const u8,
+            _: void,
+            name: []const u8,
+            _: void,
+            _: []const u8,
+        ) !ast.Pragma {
+            _ = allocator;
+            return ast.Pragma{ .ignore = name };
+        }
+    } },
 } };
 
 pub const block = pag.Rule{ .prods = &.{

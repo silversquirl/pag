@@ -103,7 +103,10 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
             },
         };
 
-        fn nextToken(self: *Self, off: usize) ParseError.Token {
+        fn nextToken(self: *Self, offset: usize) ParseError.Token {
+            // const off = offset + self.skipIgnoredTokens(offset);
+            const off = offset;
+
             if (off >= self.text.len) return .{
                 .off = off,
                 .len = 0,
@@ -136,7 +139,10 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
             inline for (comptime std.meta.declarations(rules)) |decl| {
                 if (!decl.is_pub) continue;
                 const rule = @field(rules, decl.name);
-                if (rule.kind != .token) continue;
+                switch (rule.kind) {
+                    .nonterminal => continue,
+                    .token, .ignored_token => {},
+                }
 
                 const rule_name = @field(RuleName, decl.name);
                 var res: RuleResult(rule_name) = undefined;
@@ -306,7 +312,7 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                 .none, .token => error_mode_in,
                 .normal => switch (rule.kind) {
                     .nonterminal => .normal,
-                    .token => .{ .token = .{
+                    .token, .ignored_token => .{ .token = .{
                         .off = off,
                         .name = @tagName(rule_name),
                     } },
@@ -392,15 +398,19 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
             off: usize,
             result: *SymbolResult(sym),
         ) !usize {
+            var n: usize = 0;
+            if (error_mode == .normal) {
+                n += self.skipIgnoredTokens(off);
+            }
+
             switch (sym) {
-                .end => if (off >= self.text.len) {
-                    return 0;
-                } else {
-                    return self.e(error_mode, &.{"eof"}, off);
+                .end => if (off + n < self.text.len) {
+                    return self.e(error_mode, &.{"eof"}, off + n);
                 },
-                .str => |expected| if (std.mem.startsWith(u8, self.text[off..], expected)) {
-                    result.* = self.text[off .. off + expected.len];
-                    return expected.len;
+
+                .str => |expected| if (std.mem.startsWith(u8, self.text[off + n ..], expected)) {
+                    result.* = self.text[off + n .. off + n + expected.len];
+                    n += expected.len;
                 } else {
                     const err_expected = comptime blk: {
                         const single = std.mem.count(u8, expected, "'");
@@ -410,8 +420,9 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
                             std.zig.fmtEscapes(expected),
                         });
                     };
-                    return self.e(error_mode, &.{err_expected}, off);
+                    return self.e(error_mode, &.{err_expected}, off + n);
                 },
+
                 .set => |set| {
                     if (off >= self.text.len) {
                         return self.e(error_mode, &.{comptime set.humanString()}, off); // TODO
@@ -432,13 +443,41 @@ pub fn Parser(comptime rules: type, comptime Context: type) type {
 
                     if (off < self.text.len and set.contains(rune)) {
                         result.* = rune;
-                        return rune_len;
+                        n += rune_len;
                     } else {
                         return self.e(error_mode, &.{comptime set.humanString()}, off); // TODO
                     }
                 },
-                .nt => |rule| return self.parseRuleInternal(rule, error_mode, off, result),
+
+                .nt => |rule| n += try self.parseRuleInternal(rule, error_mode, off + n, result),
             }
+
+            return n;
+        }
+
+        pub fn skipIgnoredTokens(self: *Self, offset: usize) usize {
+            var total_len: usize = 0;
+            var done = false;
+            while (!done and offset + total_len < self.text.len) {
+                done = true;
+                inline for (comptime std.meta.declarations(rules)) |decl| {
+                    if (!decl.is_pub) continue;
+                    const rule = @field(rules, decl.name);
+                    switch (rule.kind) {
+                        .nonterminal, .token => continue,
+                        .ignored_token => {},
+                    }
+
+                    const rule_name = @field(RuleName, decl.name);
+                    var res: RuleResult(rule_name) = undefined;
+
+                    if (self.parseRuleInternal(rule_name, .none, offset + total_len, &res)) |len| {
+                        total_len += len;
+                        done = false;
+                    } else |_| {}
+                }
+            }
+            return total_len;
         }
 
         pub fn RuleResult(comptime rule_name_e: RuleName) type {
@@ -581,7 +620,7 @@ pub const ParseError = struct {
 pub const Rule = struct {
     prods: []const Production,
     kind: Kind = .nonterminal,
-    pub const Kind = enum { nonterminal, token };
+    pub const Kind = enum { nonterminal, token, ignored_token };
 };
 pub const Production = struct {
     syms: []const Symbol,
@@ -686,6 +725,13 @@ pub const SetBuilder = struct {
 test "parens" {
     // Construct a parser for matched paren pairs
     const rules = struct {
+        pub const WS = Rule{ .prods = &.{
+            .{ .syms = &.{
+                .{ .set = SetBuilder.init()
+                    .add(" \t\n")
+                    .set },
+            } },
+        }, .kind = .ignored_token };
         pub const nested = Rule{ .prods = &.{
             .{ .syms = &.{ .{ .str = "(" }, .{ .nt = .many }, .{ .str = ")" } } },
         } };
@@ -704,6 +750,7 @@ test "parens" {
     try parse(rules, .many, {}, "(()())");
     try parse(rules, .many, {}, "()((()())())");
     try parse(rules, .many, {}, "(()()(()()))()()(()(()())())");
+    try parse(rules, .many, {}, " ( ()\t)()\n()");
 
     // Check it fails correctly
     try std.testing.expectError(error.InvalidParse, parse(rules, .many, {}, "("));
@@ -714,7 +761,7 @@ test "parens" {
     try std.testing.expectError(error.InvalidParse, parse(rules, .many, {}, "(()(())"));
     try std.testing.expectError(error.InvalidParse, parse(rules, .many, {}, "[]"));
     try std.testing.expectError(error.InvalidParse, parse(rules, .many, {}, "([])"));
-    try std.testing.expectError(error.InvalidParse, parse(rules, .many, {}, "( )"));
+    try std.testing.expectError(error.InvalidParse, parse(rules, .many, {}, "(a)"));
 }
 
 test "hex number" {

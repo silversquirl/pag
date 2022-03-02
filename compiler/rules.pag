@@ -56,10 +56,16 @@ toplevel: {ast.Toplevel}
     | block @(b) { return ast.Toplevel{ .block = b }; }
     | rule @(r) { return ast.Toplevel{ .rule = r }; };
 
-pragma: {ast.Pragma} = "#context" ws zig-ident ws? ":" ws? zig-type ws? ";"
-    @(_, _, name, _, _, _, ty, _, _) {
-        return ast.Pragma{ .context = .{ .name = name, .type = ty } };
-    };
+pragma: {ast.Pragma}
+    = "#context" ws zig-ident ws? ":" ws? zig-type ws? ";"
+        @(_, _, name, _, _, _, ty, _, _) {
+            return ast.Pragma{ .context = .{ .name = name, .type = ty } };
+        }
+    | "#ignore" ws ident ws? ";"
+        @(_, _, name, _, _) {
+            return ast.Pragma{ .ignore = name };
+        }
+    ;
 
 block: {[]const u8} = "{" zig-code "}" @(_, code, _) { return ArrayBuilder(u8).finish(allocator, code); };
 zig-code: {std.ArrayListUnmanaged(u8)}
